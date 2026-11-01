@@ -15,6 +15,14 @@ export interface Entry {
 	press: () => void
 }
 
+export interface Bar {
+	add(ref: RefObject<Entry>): () => void
+	touch(entry: Entry): void
+	list(): Entry[]
+	subscribe(sub: () => void): () => void
+	version(): number
+}
+
 export const defaults: Options = { names: {}, kept: {}, seen: {} }
 
 export let storage: any
@@ -23,53 +31,64 @@ export const setStorage = (v: any) => {
 	storage = v
 }
 
-const live = new Map<string, RefObject<Entry>>()
 const icons = new Map<string, ComponentType<any>>()
-const subs = new Set<() => void>()
-let version = 0
-
-const bump = () => {
-	version++
-	for (const sub of subs) sub()
-}
-
-const subscribe = (sub: () => void) => {
-	subs.add(sub)
-	return () => {
-		subs.delete(sub)
-	}
-}
-
-export const useLive = () => {
-	useSyncExternalStore(subscribe, () => version)
-	return [...live.values()].map(x => x.current)
-}
 
 export const iconFor = (id: string) => icons.get(id)
 
-export function track(ref: RefObject<Entry>) {
-	const { id, label, Icon } = ref.current
-	live.set(id, ref)
+function note({ id, label, Icon }: Entry) {
 	if (Icon) icons.set(id, Icon)
 	if (storage?.cache?.seen?.[id] !== label)
 		storage?.set({ seen: { [id]: label } })
-	bump()
+}
 
-	return () => {
-		if (live.get(id) !== ref) return
-		live.delete(id)
-		bump()
+export function createBar(): Bar {
+	const refs = new Set<RefObject<Entry>>()
+	const subs = new Set<() => void>()
+	let version = 0
+
+	const bump = () => {
+		version++
+		for (const sub of subs) sub()
+	}
+
+	return {
+		add(ref) {
+			refs.add(ref)
+			note(ref.current)
+			bump()
+			return () => {
+				refs.delete(ref)
+				bump()
+			}
+		},
+		touch(entry) {
+			note(entry)
+			bump()
+		},
+		list: () => [...refs].map(x => x.current),
+		subscribe(sub) {
+			subs.add(sub)
+			return () => {
+				subs.delete(sub)
+			}
+		},
+		version: () => version,
 	}
 }
 
-export function refresh({ id, Icon }: Entry) {
-	if (Icon) icons.set(id, Icon)
-	bump()
+const never = () => () => {}
+const zero = () => 0
+
+export function useLive(bar?: Bar | null) {
+	useSyncExternalStore(bar?.subscribe ?? never, bar?.version ?? zero)
+	return bar?.list() ?? []
 }
 
-export const press = (id: string) => live.get(id)?.current.press()
-
-export const reset = () => {
-	live.clear()
-	icons.clear()
+export function inOrder(list: Entry[], s: any) {
+	const order = Object.keys(s?.seen ?? {})
+	const at = (x: Entry) => {
+		const i = order.indexOf(x.id)
+		return i === -1 ? order.length : i
+	}
+	return [...list].sort((a, b) => at(a) - at(b))
 }

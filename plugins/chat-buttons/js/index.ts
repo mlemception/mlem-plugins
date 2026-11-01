@@ -3,7 +3,7 @@ import { after, instead } from '@valenced/patcher'
 import { createElement } from 'react'
 import { Hold, Row, setButton, skips, swapRow } from './bar'
 import { Settings } from './manage'
-import { defaults, reset, setStorage } from './store'
+import { defaults, setStorage } from './store'
 import type { Options } from './store'
 
 const path = 'modules/chat_input/native'
@@ -17,7 +17,6 @@ export default plugin<{ jsonStorage: Options }>({
 		jsonStorage.get()
 
 		cleanup(
-			reset,
 			getModuleWithImportedPath<any>(
 				`${path}/action_buttons/ChatInputActionButton.tsx`,
 				mod => {

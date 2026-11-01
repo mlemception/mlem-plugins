@@ -6,7 +6,8 @@ import { Design } from '@valenced/discord/design'
 import { createElement, useState } from 'react'
 import { ScrollView, View } from 'react-native'
 import { tint } from './icons'
-import { iconFor, storage, useLive } from './store'
+import { iconFor, inOrder, storage, useLive } from './store'
+import type { Bar } from './store'
 
 function Nickname({ id, label }: { id: string; label: string }) {
 	const { AlertModal, AlertActionButton, TextInput } = Design as any
@@ -38,26 +39,32 @@ function Nickname({ id, label }: { id: string; label: string }) {
 	)
 }
 
-function ButtonList() {
+function ButtonList({ bar }: { bar?: Bar }) {
 	const { FormSwitch, TableRow, TableRowGroup } = Design as any
 	const s = storage.use()
-	useLive()
+	const live = inOrder(useLive(bar), s)
 	if (!s) return null
 
-	const ids = Object.keys(s.seen ?? {})
+	const here = new Map(live.map(x => [x.id, x]))
+	const rest = Object.keys(s.seen ?? {}).filter(id => !here.has(id))
+	const ids = [...here.keys(), ...rest]
+	const hint = (id: string) => {
+		if (bar && !here.has(id)) return 'Not in this chat'
+		return s.names?.[id] ? s.seen?.[id] : 'Tap to add a nickname'
+	}
 
 	return (
 		<TableRowGroup title="In the menu">
 			{!ids.length && <TableRow label="Open a chat to see your buttons" />}
 			{ids.map(id => {
-				const label = s.seen[id]
+				const label = here.get(id)?.label ?? s.seen?.[id] ?? id
 				const name = s.names?.[id]
-				const Icon = iconFor(id)
+				const Icon = here.get(id)?.Icon ?? iconFor(id)
 				return (
 					<TableRow
 						key={id}
 						label={name || label}
-						subLabel={name ? label : 'Tap to add a nickname'}
+						subLabel={hint(id)}
 						icon={
 							Icon ? <TableRow.Icon IconComponent={tint(Icon)} /> : undefined
 						}
@@ -82,7 +89,7 @@ function ButtonList() {
 	)
 }
 
-function ManageSheet() {
+function ManageSheet({ bar }: { bar: Bar }) {
 	const { ActionSheet, ActionSheetCloseButton, BottomSheetTitleHeader } =
 		Design as any
 
@@ -100,17 +107,17 @@ function ManageSheet() {
 			}
 		>
 			<View style={{ paddingBottom: 16 }}>
-				<ButtonList />
+				<ButtonList bar={bar} />
 			</View>
 		</ActionSheet>
 	)
 }
 
-export const openManage = () =>
+export const openManage = (bar: Bar) =>
 	ActionSheetActionCreators.openLazy(
 		Promise.resolve({ default: ManageSheet }) as any,
 		'ChatButtons',
-		{} as any,
+		{ bar } as any,
 	)
 
 export function Settings() {
