@@ -1,0 +1,19 @@
+{
+	"format": 1,
+	"id": "mlemception.chatbuttons",
+	"name": "Chat Buttons",
+	"description": "Puts the chat bar buttons in one menu, with nicknames.",
+	"author": "mlemception",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}

@@ -10,3 +10,7 @@ based on [NexxUtils](https://github.com/nexpid/RevengePlugins/tree/main/src/plug
 ## vlc player
 
 plays discord videos in vlc. the engine is unmodified [libVLC](https://code.videolan.org/videolan/libvlcjni) 3.7.7, LGPL 2.1, and downloads on first use
+
+## chat buttons
+
+puts the chat bar buttons in one menu, like the + one. you can give them nicknames or keep some on the bar
