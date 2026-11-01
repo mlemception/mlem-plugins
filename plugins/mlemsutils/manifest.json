@@ -1,0 +1,21 @@
+{
+	"format": 1,
+	"id": "mlemception.mlemsutils",
+	"name": "mlem's utils",
+	"description": "mlem's utility plugins",
+	"author": "mlemception",
+	"contributors": ["nexpid <853550207039832084>"],
+	"icon": "StaffBadgeIcon",
+	"version": "1.6.7",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
