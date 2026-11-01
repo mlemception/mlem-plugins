@@ -2,7 +2,10 @@ import { getAssets } from '@valenced/assets'
 import { AlertActionCreators } from '@valenced/discord/actions'
 import { FormSwitch } from '@valenced/discord/design'
 import { getModules } from '@valenced/modules/finders'
-import { withProps } from '@valenced/modules/finders/filters'
+import {
+	createFilterGenerator,
+	withProps,
+} from '@valenced/modules/finders/filters'
 import { after } from '@valenced/patcher'
 import { insteadJSX } from '@valenced/react/jsx-runtime'
 import { createElement } from 'react'
@@ -11,10 +14,17 @@ import NerdEmoji from '../../../assets/MiniMod/NerdEmoji.png'
 import { byProps, showToast } from '../../lib/common'
 import { Module, ModuleCategory } from '../../stuff/Module'
 import { M3AlertButton, M3AlertModal } from './components/M3Dialog'
+import M3Slider from './components/M3Slider'
 import M3Snackbar from './components/M3Snackbar'
 import M3Switch from './components/M3Switch'
 import SwitchHost, { setSwitchResolver } from './components/SwitchHost'
 import TestAlert from './components/TestAlert'
+import TestSlider from './components/TestSlider'
+
+const withRenderName = createFilterGenerator<[string]>(
+	([name], _, exports) => exports?.render?.name === name,
+	([name]) => `mlemsutils.render(${name})`,
+)
 
 export default new Module({
 	id: 'better-components',
@@ -127,6 +137,29 @@ export default new Module({
 			},
 			icon: 'BugIcon',
 		},
+		slider: {
+			label: 'Slider',
+			subLabel(value) {
+				return value === 'Default'
+					? 'Does not modify sliders'
+					: 'Makes sliders look like Material UI sliders'
+			},
+			type: 'choose',
+			choices: ['Default', 'M3'],
+			default: 'M3',
+			icon: 'TicketIcon',
+		},
+		test_slider: {
+			label: 'Test Slider',
+			type: 'button',
+			action() {
+				AlertActionCreators.openAlert(
+					'mlemsutils-test-slider',
+					createElement(TestSlider),
+				)
+			},
+			icon: 'BugIcon',
+		},
 	},
 	handlers: {
 		onStart() {
@@ -201,6 +234,20 @@ export default new Module({
 					)
 				}
 			})
+
+			if (options.slider !== 'Default') {
+				this.patches.add(
+					getModules(
+						withRenderName('SliderComponent'),
+						(SliderComponent: any) => {
+							replace(SliderComponent, (props, _, jsx, key) =>
+								jsx(M3Slider, props, key),
+							)
+						},
+						{ max: 1 },
+					),
+				)
+			}
 
 			if (options.toast !== 'Default') {
 				loaded(['useToastContainer'], mod => {

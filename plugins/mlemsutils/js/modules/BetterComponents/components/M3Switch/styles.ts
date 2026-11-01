@@ -19,7 +19,7 @@ export interface LayoutStyles {
 	[extra: string]: any
 }
 
-const mdSysColor = {
+export const mdSysColor = {
 	primary: () =>
 		resolveCustomSemantic(rawColors.BRAND_300, rawColors.BRAND_560),
 	onPrimary: () => resolveCustomSemantic(rawColors.BRAND_730, rawColors.WHITE),
