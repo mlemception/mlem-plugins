@@ -15,16 +15,21 @@ import de.robv.android.xposed.XposedBridge
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.MediaPlayer
 import java.io.Closeable
+import java.io.File
 import java.lang.reflect.Modifier
 import java.util.concurrent.Executors
+import java.util.function.Supplier
 
 class Core(val vlc: LibVLC, val player: MediaPlayer)
 
 private val videoFile = Regex("""\.(mp4|m4v|webm|mov|mkv|avi|flv|wmv|ts|mpg|mpeg|3gp|ogv)$""", RegexOption.IGNORE_CASE)
-private val hosts = setOf("cdn.discordapp.com", "media.discordapp.net")
+private val hosts = Regex("""(^|\.)discordapp\.(net|com)$""")
 private val folders = listOf("/attachments/", "/ephemeral-attachments/", "/external/")
+private val described = Regex("""^MediaSource\(sourceUrl=(.*?), previewUrl=.*?, type=(\w+), shouldAutoPlay=(\w+)""")
 
-class Engine(private val scope: PluginScope) : Closeable {
+private class Source(val url: String, val type: String, val autoPlay: Boolean)
+
+class Engine(private val scope: PluginScope) : Closeable, Supplier<String?> {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private val hooks = mutableListOf<XC_MethodHook.Unhook>()
@@ -46,11 +51,14 @@ class Engine(private val scope: PluginScope) : Closeable {
         runCatching { hookLinks() }.onFailure { scope.log.e("link hook failed", it) }
     }
 
+    private val allVideos get() = !File(scope.storageDir, "discord-player").exists()
+
     private fun wanted(url: String?): Boolean {
         if (url == null) return false
         val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return false
         val path = uri.path ?: return false
-        return uri.host in hosts && folders.any(path::startsWith) && videoFile.containsMatchIn(path)
+        val host = uri.host ?: return false
+        return hosts.containsMatchIn(host) && folders.any(path::startsWith) && videoFile.containsMatchIn(path)
     }
 
     private fun open(url: String, popViewer: Boolean, source: View? = null) {
@@ -76,7 +84,7 @@ class Engine(private val scope: PluginScope) : Closeable {
             override fun beforeHookedMethod(param: MethodHookParam) {
                 val src = param.args[1] ?: return
                 val url = src.javaClass.getMethod("getString", String::class.java).invoke(src, "uri") as? String
-                if (!wanted(url)) return
+                if (!allVideos || !wanted(url)) return
                 param.result = null
                 open(url!!, true)
             }
@@ -94,12 +102,32 @@ class Engine(private val scope: PluginScope) : Closeable {
                 if (mediaOf(view, media) == null) return
                 param.args[1] = View.OnClickListener { target ->
                     val owner = mediaOf(view, media)
-                    val url = owner?.let { runCatching { sourceOf(it) }.getOrNull() }
-                    if (url != null) open(url, false, owner) else click.onClick(target)
+                    val source = owner?.let { runCatching { sourceOf(it) }.getOrNull() }
+                    if (source != null && takes(source)) open(source.url, false, owner) else click.onClick(target)
                 }
             }
         })
+
+        val setPlaying = media.declaredMethods.first {
+            it.returnType == Void.TYPE &&
+                it.parameterTypes.contentEquals(arrayOf(Boolean::class.javaPrimitiveType)) &&
+                Modifier.isPublic(it.modifiers)
+        }
+        val players = media.declaredFields.first { it.type.simpleName == "MediaPlayerManagerModule" }
+            .apply { isAccessible = true }
+
+        hooks += XposedBridge.hookMethod(setPlaying, object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                if (param.args[0] != true) return
+                val source = runCatching { sourceOf(param.thisObject) }.getOrNull() ?: return
+                if (!takes(source) || source.autoPlay) return
+                players.get(param.thisObject)?.let { it.javaClass.getMethod("pauseCurrentPlayer").invoke(it) }
+                open(source.url, false, param.thisObject as View)
+            }
+        })
     }
+
+    private fun takes(source: Source) = allVideos && source.type == "VIDEO"
 
     private fun mediaOf(view: View, media: Class<*>): View? {
         var at: View? = view
@@ -110,20 +138,16 @@ class Engine(private val scope: PluginScope) : Closeable {
         return null
     }
 
-    private fun sourceOf(view: Any): String? {
+    private fun sourceOf(view: Any): Source? {
         for (field in view.javaClass.declaredFields) {
             if (field.type.isPrimitive || Modifier.isStatic(field.modifiers)) continue
             field.isAccessible = true
             val value = field.get(view) ?: continue
             val name = value.javaClass.name
             if (name.startsWith("android") || name.startsWith("java") || name.startsWith("kotlin")) continue
-
-            for (inner in value.javaClass.declaredFields) {
-                if (inner.type != String::class.java || Modifier.isStatic(inner.modifiers)) continue
-                inner.isAccessible = true
-                val text = inner.get(value) as? String
-                if (wanted(text)) return text
-            }
+            val text = runCatching { value.toString() }.getOrNull() ?: continue
+            val match = described.find(text) ?: continue
+            return Source(match.groupValues[1], match.groupValues[2], match.groupValues[3] == "true")
         }
         return null
     }
@@ -166,6 +190,8 @@ class Engine(private val scope: PluginScope) : Closeable {
             scope.log.i("vlc ready ${LibVLC.version()}")
         }
     }
+
+    override fun get(): String? = if (core != null) LibVLC.version() else null
 
     override fun close() {
         alive = false

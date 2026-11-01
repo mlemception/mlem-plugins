@@ -2,10 +2,10 @@
 	"format": 1,
 	"id": "mlemception.vlcplayer",
 	"name": "VLC Player",
-	"description": "plays discord videos in vlc",
+	"description": "plays discord videos in vlc. after installing, go to plugins and turn it on",
 	"author": "mlemception",
 	"icon": "PlayIcon",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
