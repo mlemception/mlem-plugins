@@ -3,6 +3,7 @@ package mlem.vlc.engine
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.drawable.Drawable
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.CornerPathEffect
@@ -12,10 +13,25 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
+import android.view.TextureView
 import android.view.View
 import android.view.animation.PathInterpolator
 
 val emphasized = PathInterpolator(0.2f, 0f, 0f, 1f)
+
+fun whenPainted(view: TextureView, tries: Int = 30, done: () -> Unit) {
+    val dot = runCatching { view.getBitmap(4, 4) }.getOrNull()
+    val lit = dot != null && (0 until 16).any { dot.getPixel(it % 4, it / 4) and 0xFFFFFF != 0 }
+    if (lit || tries == 0) done() else view.postDelayed({ whenPainted(view, tries - 1, done) }, 40)
+}
+
+fun asset(context: Context, name: String, fallback: Int): Drawable? {
+    val res = context.resources
+    val full = "design_components_icon_native_redesign_generated_images_$name"
+    val id = res.getIdentifier(full, "drawable", context.packageName).takeIf { it != 0 }
+        ?: res.getIdentifier(full, "drawable", "com.discord")
+    return context.getDrawable(if (id != 0) id else fallback)
+}
 val bouncy = PathInterpolator(0.34f, 1.56f, 0.64f, 1f)
 
 private fun mix(a: Float, b: Float, t: Float) = a + (b - a) * t
@@ -29,6 +45,7 @@ class Glyph(context: Context, kind: Int, private val fill: Int) : View(context) 
         const val AUDIO = 4
         const val FIT = 5
         const val ROTATE = 6
+        const val DOWNLOAD = 7
     }
 
     var kind = kind
@@ -188,6 +205,13 @@ class Glyph(context: Context, kind: Int, private val fill: Int) : View(context) 
                     }
                 }
                 canvas.drawPath(path, paint)
+            }
+            DOWNLOAD -> {
+                paint.style = Paint.Style.STROKE
+                canvas.drawLine(0f, -8f, 0f, 3f, paint)
+                canvas.drawLine(-4.6f, -1.2f, 0f, 3.4f, paint)
+                canvas.drawLine(4.6f, -1.2f, 0f, 3.4f, paint)
+                canvas.drawLine(-7f, 8f, 7f, 8f, paint)
             }
             ROTATE -> {
                 paint.style = Paint.Style.STROKE

@@ -18,6 +18,7 @@ import java.net.URL
 import java.security.DigestInputStream
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.function.Function
 import java.util.function.Supplier
 import java.util.zip.ZipInputStream
 
@@ -112,6 +113,15 @@ val vlcPlugin = plugin {
             if (args[0] == true) marker.delete() else marker.createNewFile()
             null
         }
+        bridge.registerMethod("mlemvlc.setFileCards") { args ->
+            val marker = File(storageDir, "plain-files")
+            if (args[0] == true) marker.delete() else marker.createNewFile()
+            null
+        }
+        bridge.registerMethod("mlemvlc.stage") { args ->
+            @Suppress("UNCHECKED_CAST")
+            (engine as? Function<List<Any?>, Any?>)?.apply(args)
+        }
         bridge.registerMethod("mlemvlc.redownload") {
             if (State.phase != "bundled") download(true)
             null
@@ -155,6 +165,7 @@ private fun status(scope: PluginScope, version: String): Map<String, Any> {
         "size" to size.toDouble(),
         "version" to version,
         "allVideos" to !File(scope.storageDir, "discord-player").exists(),
+        "fileCards" to !File(scope.storageDir, "plain-files").exists(),
     )
 }
 

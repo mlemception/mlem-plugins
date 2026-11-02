@@ -3,6 +3,8 @@ import { callNativeMethod } from '@valenced/modules/native'
 import { useEffect, useRef, useState } from 'react'
 import { Animated, Easing, ScrollView, View } from 'react-native'
 
+import { state } from './viewer'
+
 interface Status {
 	phase: string
 	progress: number
@@ -12,6 +14,7 @@ interface Status {
 	size: number
 	version: string
 	allVideos: boolean
+	fileCards: boolean
 }
 
 const call = callNativeMethod as (name: string, args: unknown[]) => Promise<any>
@@ -99,14 +102,25 @@ export function Settings() {
 				<TableRowGroup title="Playback">
 					<TableSwitchRow
 						label="Play all videos in VLC"
-						subLabel="Opens every video in VLC, including ones that would play in chat"
+						subLabel="Plays every video in chat with VLC instead of Discord's player"
 						value={status?.allVideos ?? true}
 						disabled={!status}
 						onValueChange={(value: boolean) => {
 							setStatus(s => (s ? { ...s, allVideos: value } : s))
+							state.all = value
 							call('mlemvlc.setAllVideos', [value]).then(refresh)
 						}}
 					/>
+						<TableSwitchRow
+							label="Show video files in chat"
+							subLabel="Turns mkv, avi and other video files into players"
+							value={status?.fileCards ?? true}
+							disabled={!status}
+							onValueChange={(value: boolean) => {
+								setStatus(s => (s ? { ...s, fileCards: value } : s))
+								call('mlemvlc.setFileCards', [value]).then(refresh)
+							}}
+						/>
 				</TableRowGroup>
 				<TableRowGroup title="Engine">
 					<TableRow

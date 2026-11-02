@@ -51,7 +51,6 @@ import android.window.OnBackInvokedDispatcher
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.interfaces.IVLCVout
-import java.util.concurrent.ExecutorService
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -64,9 +63,9 @@ class Overlay(
     private val activity: Activity,
     private val url: String,
     title: String,
-    private val worker: ExecutorService,
-    private val core: () -> Core,
+    private val engine: Engine,
     private val origin: View?,
+    from: Long,
     private val onGone: () -> Unit,
 ) : FrameLayout(activity), IVLCVout.OnNewVideoLayoutListener {
     private val main = Handler(Looper.getMainLooper())
@@ -106,6 +105,10 @@ class Overlay(
         alpha = 0.7f
     }
     private val speedLabel = text("1x", 13f)
+    private val speaker = ImageView(activity).apply {
+        setColorFilter(Color.WHITE)
+        setPadding(dp(11f), dp(11f), dp(11f), dp(11f))
+    }
     private var sheet: View? = null
 
     private var target: RectF? = null
@@ -116,7 +119,6 @@ class Overlay(
     private var slowReveal = false
 
     private var player: MediaPlayer? = null
-    private var media: Media? = null
     private var attached = false
     private var closing = false
     private var playing = false
@@ -135,7 +137,7 @@ class Overlay(
     private var panY = 0f
     private var fill = false
     private var wasPlaying = false
-    private var startAt = 0L
+    private var startAt = from
     private var turned = false
     private var turning = false
     private var screenW = 0
@@ -342,7 +344,7 @@ class Overlay(
     private fun largestImage(view: View): ImageView? {
         var best: ImageView? = null
         fun walk(v: View) {
-            if (v is ImageView && v.drawable != null && v.width * v.height > (best?.let { it.width * it.height } ?: 0)) {
+            if (v is ImageView && v.drawable != null && v.width * v.height > 0 && v.width * v.height >= (best?.let { it.width * it.height } ?: 0)) {
                 best = v
             }
             if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
@@ -441,8 +443,8 @@ class Overlay(
     }
 
     private fun attach() {
-        worker.execute {
-            val core = runCatching { core() }.getOrElse {
+        engine.worker.execute {
+            val core = runCatching { engine.warm() }.getOrElse {
                 main.post { fail("couldnt start vlc") }
                 return@execute
             }
@@ -460,7 +462,6 @@ class Overlay(
                 runCatching {
                     val mp = core.player
                     player = mp
-                    media = item
                     mp.setEventListener { event -> onEvent(event) }
                     mp.vlcVout.apply {
                         setVideoView(video)
@@ -540,6 +541,7 @@ class Overlay(
                 ended = false
                 baseStamp = System.nanoTime()
                 center.kind = Glyph.PAUSE
+                sound()
                 if (startAt > 0) {
                     player?.setTime(startAt)
                     startAt = 0
@@ -626,14 +628,25 @@ class Overlay(
 
     private fun restart(at: Long) {
         val mp = player ?: return
-        val item = media ?: return
         ended = false
         startAt = at
         center.kind = Glyph.PAUSE
-        worker.execute {
+        engine.worker.execute {
             mp.stop()
-            main.post { if (!closing) mp.play(item) }
+            main.post { if (!closing) mp.play() }
         }
+    }
+
+    private fun sound() {
+        val muted = engine.muted
+        speaker.setImageDrawable(
+            asset(
+                activity,
+                if (muted) "voicexicon" else "voicenormalicon",
+                if (muted) android.R.drawable.ic_lock_silent_mode else android.R.drawable.ic_lock_silent_mode_off,
+            ),
+        )
+        player?.setVolume(if (muted) 0 else 100)
     }
 
     private fun skip(delta: Long) {
@@ -876,12 +889,11 @@ class Overlay(
 
         val leave = {
             val frame = if (covered || !video.isAvailable) null else runCatching { video.bitmap }.getOrNull()
-            val item = media
-            worker.execute {
+            engine.worker.execute {
                 mp?.setEventListener(null)
                 mp?.stop()
                 mp?.setVolume(100)
-                item?.release()
+                mp?.setMedia(null)
                 main.post { if (attached) mp?.vlcVout?.detachViews() }
             }
             flyOut(frame)
@@ -982,6 +994,7 @@ class Overlay(
             },
             LinearLayout.LayoutParams(0, -2, 1f),
         )
+        topBar.addView(button(Glyph.DOWNLOAD) { engine.download(url, title) }, LinearLayout.LayoutParams(dp(44f), dp(44f)))
         controls.addView(topBar, LayoutParams(-1, -2, Gravity.TOP))
 
         tune(center) { toggle() }
@@ -1006,6 +1019,14 @@ class Overlay(
             setOnClickListener { speedSheet() }
         }
         row.addView(speedLabel, LinearLayout.LayoutParams(-2, dp(40f)))
+        sound()
+        speaker.setOnClickListener {
+            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            engine.muted = !engine.muted
+            sound()
+            schedule()
+        }
+        row.addView(speaker, LinearLayout.LayoutParams(dp(40f), dp(40f)))
         row.addView(button(Glyph.AUDIO) { trackSheet() }, LinearLayout.LayoutParams(dp(40f), dp(40f)))
         row.addView(
             tune(fitButton) {

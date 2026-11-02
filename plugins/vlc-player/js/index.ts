@@ -1,6 +1,9 @@
 import { Settings } from './settings'
+import { watchViewer } from './viewer'
 
 export default plugin({
-	start() {},
+	start({ cleanup }) {
+		watchViewer(cleanup)
+	},
 	SettingsComponent: Settings,
 })
