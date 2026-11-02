@@ -3,6 +3,7 @@ package mlem.vlc.engine
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.SurfaceTexture
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -16,6 +17,50 @@ import org.videolan.libvlc.MediaPlayer
 
 private const val skipBy = 10_000L
 
+private val keep = object : TextureView.SurfaceTextureListener {
+    override fun onSurfaceTextureAvailable(texture: SurfaceTexture, w: Int, h: Int) {}
+    override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, w: Int, h: Int) {}
+    override fun onSurfaceTextureDestroyed(texture: SurfaceTexture) = false
+    override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {}
+}
+
+class Reel(val mp: MediaPlayer, private val texture: SurfaceTexture) {
+    var speech: Int? = null
+    var text: Int? = null
+    var speed = 1f
+
+    fun attach() {
+        mp.vlcVout.apply {
+            setVideoSurface(texture)
+            attachViews()
+        }
+    }
+
+    fun show(view: TextureView) = show(view, texture)
+
+    companion object {
+        fun show(view: TextureView, texture: SurfaceTexture) {
+            view.surfaceTextureListener = keep
+            view.setSurfaceTexture(texture)
+        }
+    }
+
+    fun stop(engine: Engine, done: () -> Unit = {}) {
+        val main = Handler(Looper.getMainLooper())
+        engine.worker.execute {
+            mp.setEventListener(null)
+            mp.stop()
+            mp.setVolume(100)
+            mp.setMedia(null)
+            main.post {
+                mp.vlcVout.detachViews()
+                texture.release()
+                done()
+            }
+        }
+    }
+}
+
 @SuppressLint("ViewConstructor")
 class Stage(
     context: Context,
@@ -26,6 +71,7 @@ class Stage(
     private var paused: Boolean,
     private var muted: Boolean,
     private val still: Bitmap?,
+    private var reel: Reel?,
 ) : FrameLayout(context) {
     private val main = Handler(Looper.getMainLooper())
     private val video = TextureView(context)
@@ -35,6 +81,15 @@ class Stage(
     }
     private val ripple = SeekRipple(context)
     private var seeking = from > 0
+    private val mirror = object : Runnable {
+        override fun run() {
+            if (closed) return
+            if (ready && playing && width > 0) {
+                runCatching { video.getBitmap(540, 540 * height / width) }.getOrNull()?.let { engine.mirror(url, it) }
+            }
+            main.postDelayed(this, 500)
+        }
+    }
     private var player: MediaPlayer? = null
     private var closed = false
     private var ready = false
@@ -42,9 +97,6 @@ class Stage(
     private var playing = false
     private var held = false
     private var looped = false
-    private var speech: Int? = null
-    private var text: Int? = null
-    private var speed = 1f
     private var width0 = 0
     private var height0 = 0
     @Volatile private var time = from
@@ -61,7 +113,33 @@ class Stage(
         host.addView(this, 0, LayoutParams(-1, -1))
         fit(host)
         host.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ -> fit(view as ViewGroup) }
-        start()
+        reel?.let(::adopt) ?: start()
+        main.post(mirror)
+    }
+
+    private fun adopt(given: Reel) {
+        val mp = given.mp
+        player = mp
+        given.show(video)
+        mp.setEventListener { event -> main.post { if (!closed) onEvent(event) } }
+        sync()
+        mp.currentVideoTrack?.let {
+            width0 = it.width
+            height0 = it.height
+        }
+        length = mp.length
+        time = mp.time.coerceAtLeast(0)
+        playing = mp.isPlaying
+        seeking = false
+        ready = true
+        if (!paused && !playing) mp.play()
+        reveal()
+    }
+
+    private fun reveal() {
+        whenPainted(video) {
+            cover.animate().alpha(0f).setDuration(120).withEndAction { cover.visibility = GONE }.start()
+        }
     }
 
     private fun fit(host: ViewGroup) {
@@ -109,11 +187,12 @@ class Stage(
                 runCatching {
                     val mp = core.player
                     player = mp
+                    val texture = SurfaceTexture(false)
+                    val made2 = Reel(mp, texture)
+                    reel = made2
+                    made2.show(video)
                     mp.setEventListener { event -> main.post { if (!closed) onEvent(event) } }
-                    mp.vlcVout.apply {
-                        setVideoView(video)
-                        attachViews()
-                    }
+                    made2.attach()
                     sync()
                     mp.rate = 1f
                     mp.play(made)
@@ -139,9 +218,11 @@ class Stage(
                 time = event.timeChanged
                 if (looped && event.timeChanged > 0) {
                     looped = false
-                    speech?.let(mp::setAudioTrack)
-                    text?.let(mp::setSpuTrack)
-                    mp.rate = speed
+                    reel?.let {
+                        it.speech?.let(mp::setAudioTrack)
+                        it.text?.let(mp::setSpuTrack)
+                        mp.rate = it.speed
+                    }
                 }
                 if (!ready && event.timeChanged > 0) {
                     mp.currentVideoTrack?.let {
@@ -150,9 +231,7 @@ class Stage(
                     }
                     ready = true
                     mp.setVolume(if (muted) 0 else 100)
-                    whenPainted(video) {
-                        cover.animate().alpha(0f).setDuration(120).withEndAction { cover.visibility = GONE }.start()
-                    }
+                    reveal()
                 }
             }
             MediaPlayer.Event.EndReached -> {
@@ -212,43 +291,40 @@ class Stage(
         return mapOf(
             "audio" to list(mp.audioTracks, mp.audioTrack),
             "subs" to list(mp.spuTracks, mp.spuTrack),
-            "rate" to speed.toDouble(),
+            "rate" to (reel?.speed ?: 1f).toDouble(),
         )
     }
 
     fun pick(kind: String, track: Int) {
         val mp = player ?: return
         if (kind == "audio") {
-            speech = track
+            reel?.speech = track
             mp.setAudioTrack(track)
         } else {
-            text = track
+            reel?.text = track
             mp.setSpuTrack(track)
         }
     }
 
     fun rate(value: Double) {
-        speed = value.toFloat()
-        player?.rate = speed
+        reel?.speed = value.toFloat()
+        player?.rate = value.toFloat()
     }
 
     fun position() = time
 
     fun frame() = if (ready) runCatching { video.bitmap }.getOrNull() else still
 
-    fun close() {
-        if (closed) return
+    fun give(): Reel? {
+        if (closed) return null
         closed = true
-        val mp = player
+        player?.setEventListener(null)
         player = null
         (parent as? ViewGroup)?.removeView(this)
-        if (mp == null) return
-        engine.worker.execute {
-            mp.setEventListener(null)
-            mp.stop()
-            mp.setVolume(100)
-            mp.setMedia(null)
-            main.post { mp.vlcVout.detachViews() }
-        }
+        return reel.also { reel = null }
+    }
+
+    fun close() {
+        give()?.stop(engine)
     }
 }

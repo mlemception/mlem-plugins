@@ -7,6 +7,7 @@ import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Outline
+import android.graphics.SurfaceTexture
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -18,6 +19,7 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.TextureView
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
@@ -90,6 +92,7 @@ class Tile(
     private var sizing: ValueAnimator? = null
     private var video: TextureView? = null
     private var player: MediaPlayer? = null
+    private var reel: Reel? = null
     private var peeking = false
     private var session = 0
     private var started = false
@@ -103,6 +106,9 @@ class Tile(
     private var left = false
 
     private var aimed = false
+    private var still = false
+    private var downY = 0f
+    private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private val taps = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             if (started) engine.full(this@Tile) else start()
@@ -110,7 +116,9 @@ class Tile(
         }
 
         override fun onLongPress(e: MotionEvent) {
-            if (engine.hold(this@Tile)) performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            main.postDelayed({
+                if (still && engine.hold(this@Tile)) performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            }, 90)
         }
     })
 
@@ -211,7 +219,15 @@ class Tile(
     }
 
     override fun dispatchTouchEvent(e: MotionEvent): Boolean {
-        if (e.actionMasked == MotionEvent.ACTION_DOWN) aimed = e.x <= body.right && !overSpeaker(e)
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                aimed = e.x <= body.right && !overSpeaker(e)
+                still = true
+                downY = e.y
+            }
+            MotionEvent.ACTION_MOVE -> if (abs(e.y - downY) > slop) still = false
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> still = false
+        }
         if (aimed) taps.onTouchEvent(e)
         super.dispatchTouchEvent(e)
         return true
@@ -245,8 +261,8 @@ class Tile(
         setHWDecoderEnabled(true, false)
         addOption(":network-caching=350")
         addOption(":file-caching=150")
-        addOption(":no-spu")
         if (quiet) {
+            addOption(":no-spu")
             addOption(":no-audio")
             addOption(":start-time=1")
         }
@@ -265,6 +281,17 @@ class Tile(
     }
 
     fun start() {
+        reel?.let {
+            if (started) return
+            started = true
+            shown = false
+            engine.claim(this)
+            center.visibility = GONE
+            speaker.visibility = VISIBLE
+            sound()
+            it.mp.play()
+            return
+        }
         if (player != null) return
         engine.dropPeek(this)
         finishPeek()
@@ -281,6 +308,8 @@ class Tile(
         sound()
         val view = surface()
         if (floating) view.alpha = 0f
+        val texture = SurfaceTexture(false)
+        Reel.show(view, texture)
 
         engine.worker.execute {
             val core = runCatching { engine.warm() }.getOrElse {
@@ -295,9 +324,12 @@ class Tile(
                 }
                 runCatching {
                     val mp = core.inline
+                    val made2 = Reel(mp, texture)
+                    reel = made2
                     player = mp
                     mp.setEventListener { event -> main.post { if (run == session) onEvent(event) } }
-                    bind(mp, view)
+                    made2.attach()
+                    syncWindow(mp)
                     mp.play(made)
                 }.onFailure { halt() }
             }
@@ -408,6 +440,8 @@ class Tile(
     private fun stop(mp: MediaPlayer) {
         val image = if (shown && playing) frame(video) else null
         val view = video
+        val running = reel
+        reel = null
         player = null
         video = null
         playing = false
@@ -415,7 +449,7 @@ class Tile(
         session++
         main.removeCallbacks(showSpinner)
         spinner.visibility = GONE
-        release(mp, view)
+        running?.stop(engine) { view?.let(body::removeView) }
         engine.released(this)
 
         image?.let(poster::setImageBitmap)
@@ -425,11 +459,27 @@ class Tile(
         poster.alpha = if (poster.drawable != null) 1f else 0f
     }
 
-    fun hand(): Long {
+    fun spot() = player?.time?.coerceAtLeast(0) ?: resume
+
+    fun hand(image: Bitmap?): Reel? {
+        val given = reel
         away = true
+        main.removeCallbacks(showSpinner)
         speaker.visibility = GONE
         spinner.visibility = GONE
-        return player?.time?.coerceAtLeast(0) ?: resume
+        image?.let(poster::setImageBitmap)
+        poster.animate().cancel()
+        poster.alpha = if (poster.drawable != null) 1f else 0f
+        veil.animate().cancel()
+        veil.alpha = 1f
+        player?.setEventListener(null)
+        video?.let(body::removeView)
+        video = null
+        player = null
+        reel = null
+        playing = false
+        session++
+        return given
     }
 
     fun still(): Bitmap? {
@@ -438,12 +488,7 @@ class Tile(
             ?: (poster.drawable as? BitmapDrawable)?.bitmap
     }
 
-    fun park() {
-        player?.let(::stop)
-    }
-
     fun back(at: Long?, image: Bitmap?) {
-        park()
         away = false
         started = false
         resume = at ?: resume
@@ -454,6 +499,22 @@ class Tile(
         }
         center.visibility = VISIBLE
         speaker.visibility = GONE
+    }
+
+    fun mirror(image: Bitmap) {
+        poster.setImageBitmap(image)
+    }
+
+    fun take(given: Reel) {
+        val mp = given.mp
+        val run = ++session
+        val view = surface()
+        reel = given
+        player = mp
+        resume = 0
+        given.show(view)
+        mp.setEventListener { event -> main.post { if (run == session) onEvent(event) } }
+        syncWindow(mp)
     }
 
     fun halt() {

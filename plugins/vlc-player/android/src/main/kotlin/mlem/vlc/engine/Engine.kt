@@ -64,6 +64,8 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
     var muted = false
     private var stage: Stage? = null
     private var still: Bitmap? = null
+    private var handed: Reel? = null
+    private var leaver: Tile? = null
     private var viewer = false
 
     init {
@@ -305,13 +307,32 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
         }
     }
 
+    private var activeUrl: String? = null
+
     fun full(tile: Tile) {
+        activeUrl = tile.url
         val owner = tile.parent as? View
         val floating = owner != null && owner.javaClass.simpleName == "MediaView"
-        val at = tile.hand()
+        val at = tile.spot()
         still = tile.still()
-        tile.park()
-        if (viewer && show(tile, at)) return
+        val reel = tile.hand(still)
+        active = null
+        if (viewer) {
+            handed = reel
+            if (show(tile, at)) {
+                main.postDelayed({
+                    if (handed === reel && reel != null) {
+                        handed = null
+                        tile.back(at, null)
+                        tile.take(reel)
+                        reel.mp.pause()
+                    }
+                }, 5000)
+                return
+            }
+            handed = null
+        }
+        reel?.stop(this)
         open(tile.url, false, if (floating) owner else tile, at)
     }
 
@@ -376,8 +397,11 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
             "close" -> main.post {
                 if (live != null) {
                     leaving(live)
-                    live.close()
+                    val tile = leaver
+                    leaver = null
+                    val reel = live.give()
                     stage = null
+                    if (reel != null && tile?.isAttachedToWindow == true) tile.take(reel) else reel?.stop(this)
                     audio(false)
                 }
             }
@@ -385,8 +409,15 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
         }
     }
 
+    fun mirror(url: String, image: Bitmap) {
+        tiles.firstOrNull { it.away && it.url == url }?.mirror(image)
+    }
+
     private fun leaving(live: Stage) {
+        if (leaver != null) return
         val tile = tiles.firstOrNull { it.away && it.url == live.url } ?: return
+        leaver = tile
+        live.pause(true)
         tile.back(live.position(), live.frame())
     }
 
@@ -403,7 +434,9 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
                 audio(true)
                 val image = still
                 still = null
-                stage = Stage(host.context, id, url, this, at, paused, quiet, image).also { it.mount(host) }
+                val reel = handed?.takeIf { activeUrl == url }
+                handed = null
+                stage = Stage(host.context, id, url, this, at, paused, quiet, image, reel).also { it.mount(host) }
             }
         }
     }
