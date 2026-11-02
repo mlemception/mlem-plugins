@@ -59,10 +59,27 @@ function Stash({ hidden, children }: { hidden: boolean; children: ReactNode }) {
 const stateOf = (p: any) =>
 	p.accessibilityState?.checked ?? p.accessibilityState?.selected ?? p.active
 
+const touch = { nativeEvent: {}, persist() {} }
+
+const replay = (p: any, fire: (e: any) => void) => () => {
+	p.onPressIn?.(touch)
+	fire(touch)
+	p.onPressOut?.(touch)
+}
+
+const replayGesture = (h: any) => () => {
+	h.onBegin?.(touch)
+	h.onStart?.(touch)
+	h.onEnd?.(touch, true)
+	h.onFinalize?.(touch, true)
+}
+
 const longGesture = (g: any): any => {
 	if (!g) return
 	if (g.handlerName === 'LongPressGestureHandler')
-		return g.handlers?.onStart ?? g.handlers?.onBegin
+		return g.handlers?.onStart || g.handlers?.onBegin
+			? replayGesture(g.handlers)
+			: undefined
 	for (const x of g.gestures ?? []) {
 		const hit = longGesture(x)
 		if (hit) return hit
@@ -79,7 +96,7 @@ const findHold = (node: any): any => {
 	}
 	if (!isValidElement(node)) return
 	const p = node.props as any
-	if (typeof p.onLongPress === 'function') return p.onLongPress
+	if (typeof p.onLongPress === 'function') return replay(p, p.onLongPress)
 	return longGesture(p.gesture) ?? findHold(p.children)
 }
 
@@ -120,7 +137,7 @@ function Held({ real: Real, ...props }: any) {
 		label: props.accessibilityLabel ?? 'Button',
 		Icon: props.IconComponent,
 		on: gift ? undefined : stateOf(props),
-		press: props.onPress,
+		press: replay(props, props.onPress),
 		hold: findHold(out),
 	})
 	return <Stash hidden={!kept}>{out}</Stash>
@@ -277,7 +294,7 @@ function Picked({ id, out, hit }: any) {
 		label: name,
 		Icon: hit.IconComponent ?? Drawn,
 		on: stateOf(hit),
-		press: hit.onPress,
+		press: replay(hit, hit.onPress),
 		hold: findHold(out),
 	})
 	return (

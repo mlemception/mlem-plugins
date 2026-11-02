@@ -36,7 +36,7 @@ export function tint(Icon: ComponentType<any>) {
 				t.colors.INTERACTIVE_ICON_DEFAULT,
 			)
 			return (
-				<View style={box}>
+				<View pointerEvents="none" style={box}>
 					<Icon style={{ width: 20, height: 20, tintColor }} />
 				</View>
 			)
