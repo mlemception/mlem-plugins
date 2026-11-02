@@ -13,6 +13,7 @@ export interface Entry {
 	Icon?: ComponentType<any>
 	on?: boolean
 	press: () => void
+	hold?: () => void
 }
 
 export interface Bar {

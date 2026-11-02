@@ -16,18 +16,14 @@ const asset =
 export const MenuIcon = asset('GridSquareIcon')
 export const EmojiIcon = asset('ReactionIcon')
 export const EditIcon = asset('PencilIcon')
+export const MoreIcon = asset('MoreHorizontalIcon')
 
-const state = (on: boolean) => () => {
-	const { FormSwitch } = Design as any
-	return (
-		<View pointerEvents="none">
-			<FormSwitch value={on} onValueChange={() => {}} />
-		</View>
-	)
-}
-
-export const On = state(true)
-export const Off = state(false)
+const box = {
+	width: 24,
+	height: 24,
+	alignItems: 'center',
+	justifyContent: 'center',
+} as const
 
 const tints = new WeakMap<object, ComponentType<any>>()
 
@@ -39,7 +35,11 @@ export function tint(Icon: ComponentType<any>) {
 			const tintColor = (Design as any).useToken(
 				t.colors.INTERACTIVE_ICON_DEFAULT,
 			)
-			return <Icon style={{ width: 16, height: 16, tintColor }} />
+			return (
+				<View style={box}>
+					<Icon style={{ width: 20, height: 20, tintColor }} />
+				</View>
+			)
 		}
 		tints.set(Icon, Tinted)
 	}

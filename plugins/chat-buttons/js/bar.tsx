@@ -11,9 +11,8 @@ import {
 	useState,
 } from 'react'
 import { View } from 'react-native'
-import { EditIcon, EmojiIcon, MenuIcon, Off, On, tint } from './icons'
-import { openManage } from './manage'
-import { createBar, inOrder, storage, useLive } from './store'
+import { EmojiIcon, MenuIcon } from './icons'
+import { createBar, storage } from './store'
 import type { ComponentType, ReactNode } from 'react'
 import type { Bar as BarType, Entry } from './store'
 
@@ -30,7 +29,10 @@ function useHeld(entry: Entry) {
 	ref.current = entry
 
 	useLayoutEffect(() => bar?.add(ref), [bar, entry.id])
-	useLayoutEffect(() => bar?.touch(ref.current), [bar, entry.on, entry.Icon])
+	useLayoutEffect(
+		() => bar?.touch(ref.current),
+		[bar, entry.on, entry.Icon, !!entry.hold],
+	)
 	useLayoutEffect(() => {
 		slot?.(!kept)
 	}, [kept, slot])
@@ -57,6 +59,32 @@ function Stash({ hidden, children }: { hidden: boolean; children: ReactNode }) {
 const stateOf = (p: any) =>
 	p.accessibilityState?.checked ?? p.accessibilityState?.selected ?? p.active
 
+const longGesture = (g: any): any => {
+	if (!g) return
+	if (g.handlerName === 'LongPressGestureHandler')
+		return g.handlers?.onStart ?? g.handlers?.onBegin
+	for (const x of g.gestures ?? []) {
+		const hit = longGesture(x)
+		if (hit) return hit
+	}
+}
+
+const findHold = (node: any): any => {
+	if (Array.isArray(node)) {
+		for (const x of node) {
+			const hit = findHold(x)
+			if (hit) return hit
+		}
+		return
+	}
+	if (!isValidElement(node)) return
+	const p = node.props as any
+	if (typeof p.onLongPress === 'function') return p.onLongPress
+	return longGesture(p.gesture) ?? findHold(p.children)
+}
+
+export const forced = { on: false }
+
 let Button: any
 
 export const setButton = (v: any) => {
@@ -66,22 +94,96 @@ export const setButton = (v: any) => {
 export function Hold({ real: Real, ...props }: any) {
 	const bar = useContext(Bar)
 	const free = useContext(Free)
-	return !bar || free ? <Real {...props} /> : <Held real={Real} {...props} />
+	return !bar || free ? (
+		<Plain real={Real} {...props} />
+	) : (
+		<Held real={Real} {...props} />
+	)
+}
+
+const run = (Real: any, props: any) => {
+	const out = Real(props)
+	return props.onLongPress && isValidElement(out)
+		? cloneElement(out as any, { onLongPress: props.onLongPress })
+		: out
+}
+
+function Plain({ real, ...props }: any) {
+	return run(real, props)
 }
 
 function Held({ real: Real, ...props }: any) {
 	const gift = !!useContext(Slot)
+	const out = run(Real, props)
 	const kept = useHeld({
 		id: props.accessibilityLabel ?? props.IconComponent?.name ?? 'button',
 		label: props.accessibilityLabel ?? 'Button',
 		Icon: props.IconComponent,
 		on: gift ? undefined : stateOf(props),
 		press: props.onPress,
+		hold: findHold(out),
+	})
+	return <Stash hidden={!kept}>{out}</Stash>
+}
+
+export const markOwn = (node: any): any => {
+	if (Array.isArray(node)) {
+		for (const [i, x] of node.entries()) {
+			const hit = markOwn(x)
+			if (hit !== x) {
+				const next = [...node]
+				next[i] = hit
+				return next
+			}
+		}
+		return node
+	}
+	if (!isValidElement(node)) return node
+	const p = node.props as any
+	if (node.type === Popup) return { ...node, props: { ...p, own: true } }
+	const children = markOwn(p.children)
+	return children === p.children ? node : { ...node, props: { ...p, children } }
+}
+
+export function Popup({ real: Real, props, jsx, own }: any) {
+	const bar = useContext(Bar)
+	const free = useContext(Free)
+	const p = bar && !free && !own ? props.children?.({})?.props : null
+	const button = p?.accessibilityLabel || p?.IconComponent
+	if (!button || p.keep || p.accessibilityActions) return jsx(Real, props)
+	return <Caught real={Real} props={props} jsx={jsx} p={p} />
+}
+
+function Caught({ real: Real, props, jsx, p }: any) {
+	const handle = useRef<any>(null)
+	const [open] = useState(() => () => {
+		setTimeout(() => {
+			forced.on = true
+			handle.current?.onPress?.()
+			forced.on = false
+		}, 160)
+	})
+	const long = !!props.triggerOnLongPress
+	const kept = useHeld({
+		id: p.accessibilityLabel ?? p.IconComponent?.name ?? 'menu',
+		label: p.accessibilityLabel ?? 'Menu',
+		Icon: p.IconComponent,
+		on: stateOf(p),
+		press: long && p.onPress ? p.onPress : open,
+		hold: long ? open : undefined,
 	})
 	return (
-		<Stash hidden={!kept}>
-			<Real {...props} />
-		</Stash>
+		<Free.Provider value>
+			<Stash hidden={!kept}>
+				{jsx(Real, {
+					...props,
+					children: (x: any) => {
+						handle.current = x
+						return props.children(x)
+					},
+				})}
+			</Stash>
+		</Free.Provider>
 	)
 }
 
@@ -127,6 +229,12 @@ const longPress = (node: any): boolean => {
 	return !!p.triggerOnLongPress || longPress(p.children)
 }
 
+const hasButton = (node: any): boolean => {
+	if (Array.isArray(node)) return node.some(hasButton)
+	if (!isValidElement(node)) return false
+	return node.type === Button || hasButton((node.props as any).children)
+}
+
 const inner = (type: any) => {
 	if (typeof type === 'function')
 		return type.prototype?.isReactComponent ? undefined : type
@@ -134,11 +242,24 @@ const inner = (type: any) => {
 	return type?.render
 }
 
+const leaf = (node: any): any => {
+	if (Array.isArray(node)) {
+		for (const x of node) {
+			const hit = leaf(x)
+			if (hit) return hit
+		}
+		return
+	}
+	if (!isValidElement(node)) return
+	return leaf((node.props as any).children) ?? node
+}
+
 function Foreign({ render, id, props }: any) {
 	const out = render(props, props.ref)
 	if (longPress(out)) return <Free.Provider value>{out}</Free.Provider>
 	const hit = pressable(out)
-	return hit ? <Picked id={id} out={out} hit={hit} /> : out
+	if (!hit || (hasButton(out) && !findHold(out))) return out
+	return <Picked id={id} out={out} hit={hit} />
 }
 
 function Picked({ id, out, hit }: any) {
@@ -146,10 +267,10 @@ function Picked({ id, out, hit }: any) {
 	const icon = useRef(hit.children)
 	icon.current = hit.children
 	const [Drawn] = useState(() => ({ style }: any) => {
-		const x = icon.current
-		return isValidElement(x)
+		const x = leaf(icon.current)
+		return x
 			? cloneElement(x as any, { style: [(x.props as any).style, style] })
-			: x
+			: null
 	})
 	const kept = useHeld({
 		id: name,
@@ -157,6 +278,7 @@ function Picked({ id, out, hit }: any) {
 		Icon: hit.IconComponent ?? Drawn,
 		on: stateOf(hit),
 		press: hit.onPress,
+		hold: findHold(out),
 	})
 	return (
 		<Free.Provider value>
@@ -204,34 +326,10 @@ const isRight = (x: any) =>
 
 function Menu({ bar }: { bar: BarType }) {
 	const { ContextMenu } = Design as any
-	const s = storage.use()
-	const rows = inOrder(useLive(bar), s).filter(x => !s?.kept?.[x.id])
-
-	const manage = [
-		{
-			label: 'Manage buttons',
-			IconComponent: tint(EditIcon),
-			action: () => openManage(bar),
-		},
-	]
-
-	const items = rows.map(x => ({
-		label: s?.names?.[x.id] || x.label,
-		IconComponent: x.Icon && tint(x.Icon),
-		trailingIndicator:
-			typeof x.on === 'boolean' ? (x.on ? On : Off) : undefined,
-		action: () =>
-			bar
-				.list()
-				.find(y => y.id === x.id)
-				?.press(),
-	}))
+	const [items] = useState(() => [{ label: 'Buttons', bar }])
 
 	return (
-		<ContextMenu
-			align="above"
-			items={items.length ? [items, manage] : [manage]}
-		>
+		<ContextMenu align="above" triggerOnTap items={items}>
 			{(p: any) => (
 				<Button
 					{...p}

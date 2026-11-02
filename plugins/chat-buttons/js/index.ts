@@ -1,12 +1,24 @@
 import { getModuleWithImportedPath } from '@valenced/discord/utils/modules/finders'
-import { after, instead } from '@valenced/patcher'
+import { after, HookPriority, instead } from '@valenced/patcher'
+import { insteadJSX } from '@valenced/react/jsx-runtime'
 import { createElement } from 'react'
-import { Hold, Row, setButton, skips, swapRow } from './bar'
+import {
+	forced,
+	Hold,
+	markOwn,
+	Popup,
+	Row,
+	setButton,
+	skips,
+	swapRow,
+} from './bar'
 import { Settings } from './manage'
+import { Sheet, setHaptics } from './menu'
 import { defaults, setStorage } from './store'
 import type { Options } from './store'
 
 const path = 'modules/chat_input/native'
+const menu = 'design/components/ContextMenu/native'
 
 export default plugin<{ jsonStorage: Options }>({
 	jsonStorage: { default: defaults },
@@ -22,12 +34,22 @@ export default plugin<{ jsonStorage: Options }>({
 				mod => {
 					setButton(mod.default)
 					cleanup(
-						instead(mod.default, 'type', ([p], real) =>
-							skips(p)
-								? createElement(real, p)
-								: createElement(Hold, { ...p, real }),
+						instead(
+							mod.default,
+							'type',
+							([p], real) =>
+								skips(p)
+									? createElement(real, p)
+									: createElement(Hold, { ...p, real }),
+							{ priority: HookPriority.HIGHEST },
 						),
 					)
+				},
+			),
+			getModuleWithImportedPath<any>(
+				`${path}/action_buttons/ChatInputActions.tsx`,
+				mod => {
+					cleanup(after(mod.default, 'type', markOwn))
 				},
 			),
 			getModuleWithImportedPath<any>(
@@ -45,6 +67,39 @@ export default plugin<{ jsonStorage: Options }>({
 			getModuleWithImportedPath<any>(`${path}/ChatInput.tsx`, mod => {
 				cleanup(after(mod.default, 'type', swapRow))
 			}),
+			getModuleWithImportedPath<any>(`${menu}/ContextMenu.native.tsx`, mod => {
+				cleanup(
+					insteadJSX(mod.ContextMenu, ([type, props, key], jsx: any) =>
+						jsx(Popup, { real: type, props, jsx }, key),
+					),
+				)
+			}),
+			getModuleWithImportedPath<any>(
+				`${menu}/ContextMenuPopout.native.tsx`,
+				mod => {
+					cleanup(
+						instead(mod, 'ContextMenuPopout', ([p], real) =>
+							p.menu.items[0]?.bar ? createElement(Sheet, p) : real(p),
+						),
+					)
+				},
+			),
+			getModuleWithImportedPath<any>(
+				'modules/haptics/HapticUtils.native.tsx',
+				setHaptics,
+			),
+			getModuleWithImportedPath<any>(
+				'modules/a11y/native/useIsScreenReaderEnabled.native.tsx',
+				mod => {
+					cleanup(
+						instead(
+							mod,
+							'getIsScreenReaderEnabled',
+							(args, real) => forced.on || real(...args),
+						),
+					)
+				},
+			),
 		)
 	},
 })
