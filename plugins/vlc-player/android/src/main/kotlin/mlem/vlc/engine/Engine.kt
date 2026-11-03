@@ -2,6 +2,7 @@ package mlem.vlc.engine
 
 import android.app.Activity
 import android.app.DownloadManager
+import android.content.ContentValues
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
@@ -15,15 +16,16 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import app.valenced.plugins.PluginScope
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
-import org.videolan.libvlc.LibVLC
 import org.json.JSONObject
+import org.videolan.libvlc.LibVLC
+import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import java.io.Closeable
 import java.io.File
@@ -35,7 +37,7 @@ import java.util.concurrent.Executors
 import java.util.function.Function
 import java.util.function.Supplier
 
-class Core(val vlc: LibVLC, val player: MediaPlayer, val inline: MediaPlayer, val peek: MediaPlayer)
+class Core(val vlc: LibVLC, val player: MediaPlayer, val inline: MediaPlayer, val peek: MediaPlayer, val cache: Cache)
 
 private val videoFile = Regex("""\.(mp4|m4v|webm|mov|mkv|avi|flv|wmv|ts|mpg|mpeg|3gp|ogv)$""", RegexOption.IGNORE_CASE)
 private val hosts = Regex("""(^|\.)discordapp\.(net|com)$""")
@@ -44,6 +46,8 @@ private val described = Regex("""^MediaSource\(sourceUrl=(.*?), previewUrl=.*?, 
 
 private class Source(val url: String, val type: String, val autoPlay: Boolean)
 
+private class Handoff(val tile: Tile, val reel: Reel?, val still: Bitmap?, val at: Long)
+
 class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Function<List<Any?>, Any?> {
     private val main = Handler(Looper.getMainLooper())
     val worker = Executors.newSingleThreadExecutor()
@@ -51,7 +55,6 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
     val posters = Posters(scope.storageDir, disk)
     private val hooks = mutableListOf<XC_MethodHook.Unhook>()
     private var core: Core? = null
-    private var overlay: Overlay? = null
     private var alive = true
     private var app: Context? = null
     private var active: Tile? = null
@@ -63,20 +66,17 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
     private val holds = WeakHashMap<View, View.OnLongClickListener>()
     var muted = false
     private var stage: Stage? = null
-    private var still: Bitmap? = null
-    private var handed: Reel? = null
+    private var handoff: Handoff? = null
     private var leaver: Tile? = null
     private var viewer = false
+
+    val cache get() = core?.cache
 
     init {
         scope.withAppActivity { activity ->
             app = activity.application
-            worker.execute {
-                runCatching { warm() }.onFailure { scope.log.e("vlc failed to start", it) }
-            }
+            worker.execute { runCatching { warm() }.onFailure { scope.log.e("vlc failed to start", it) } }
         }
-
-        runCatching { hookViewer() }.onFailure { scope.log.e("viewer hook failed", it) }
         runCatching { hookChat() }.onFailure { scope.log.e("chat hook failed", it) }
         runCatching { hookFiles() }.onFailure { scope.log.e("file hook failed", it) }
         runCatching { hookLinks() }.onFailure { scope.log.e("link hook failed", it) }
@@ -86,42 +86,19 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
     private val fileCards get() = !File(scope.storageDir, "plain-files").exists()
 
     private fun wanted(url: String?): Boolean {
-        if (url == null) return false
         val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return false
         val path = uri.path ?: return false
-        val host = uri.host ?: return false
-        return hosts.containsMatchIn(host) && folders.any(path::startsWith) && videoFile.containsMatchIn(path)
+        return hosts.containsMatchIn(uri.host ?: return false) && folders.any(path::startsWith) && videoFile.containsMatchIn(path)
     }
 
-    private fun open(url: String, popViewer: Boolean, source: View? = null, from: Long = 0) {
-        if (!alive) return
-        val name = Uri.parse(url).lastPathSegment.orEmpty()
-        scope.withAppActivity { activity ->
-            main.post {
-                if (overlay != null) return@post
-                overlay = Overlay(activity, url, name, this, source, from) {
-                    overlay = null
-                    source?.visibility = View.VISIBLE
-                    tiles.firstOrNull { it.away }?.back(null, null)
-                    if (popViewer) activity.onBackPressed()
-                }
-            }
+    fun media(core: Core, url: String, quiet: Boolean = false) = Media(core.vlc, Uri.parse(core.cache.local(url))).apply {
+        setHWDecoderEnabled(true, false)
+        addOption(":network-caching=1000")
+        if (quiet) {
+            addOption(":no-spu")
+            addOption(":no-audio")
+            addOption(":start-time=1")
         }
-    }
-
-    private fun hookViewer() {
-        val manager = scope.classLoader.loadClass("com.brentvatne.exoplayer.ReactExoplayerViewManager")
-        val setSrc = manager.declaredMethods.first { it.name == "setSrc" && it.parameterCount == 2 }
-
-        hooks += XposedBridge.hookMethod(setSrc, object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) {
-                val src = param.args[1] ?: return
-                val url = src.javaClass.getMethod("getString", String::class.java).invoke(src, "uri") as? String
-                if (!allVideos || !wanted(url)) return
-                param.result = null
-                open(url!!, true)
-            }
-        })
     }
 
     private fun hookChat() {
@@ -191,29 +168,27 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
                 if (cardHook != null) return
                 val root = param.args[1] as? ViewGroup ?: return
                 val res = root.resources
-                val hasName = (0 until root.childCount).any {
+                val named = (0 until root.childCount).any {
                     val id = root.getChildAt(it).id
                     id != View.NO_ID && runCatching { res.getResourceEntryName(id) }.getOrNull() == "file_attachment_name"
                 }
-                if (!hasName) return
+                if (!named) return
                 val bind = bindOf(root.javaClass) ?: return
                 cardHook = XposedBridge.hookMethod(bind, object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
                         runCatching { dress(param.thisObject as ViewGroup, param.args) }
                             .onFailure { scope.log.e("file card failed", it) }
                     }
-                })
-                hooks += cardHook!!
+                }).also { hooks += it }
             }
         })
     }
 
     private fun bindOf(type: Class<*>): Method? {
         var at: Class<*>? = type
-        val text = String::class.java
         while (at != null && at != ViewGroup::class.java) {
             at.declaredMethods.firstOrNull {
-                it.parameterCount > 8 && it.parameterTypes.take(3).all { p -> p == text }
+                it.parameterCount > 8 && it.parameterTypes.take(3).all { p -> p == String::class.java }
             }?.let { return it }
             at = at.superclass
         }
@@ -221,12 +196,10 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
     }
 
     private fun dress(card: ViewGroup, args: Array<Any?>) {
-        val strings = args.take(3).map { it as? String }
-        val url = strings.firstOrNull { it?.startsWith("http") == true }
-        val old = (0 until card.childCount).map(card::getChildAt).firstOrNull { it is Tile } as Tile?
-        val spoiler = (0 until card.childCount).map(card::getChildAt).any {
-            it.javaClass.simpleName == "SpoilerView" && it.visibility == View.VISIBLE
-        }
+        val url = args.take(3).firstOrNull { (it as? String)?.startsWith("http") == true } as String?
+        val children = (0 until card.childCount).map(card::getChildAt)
+        val old = children.firstOrNull { it is Tile } as Tile?
+        val spoiler = children.any { it.javaClass.simpleName == "SpoilerView" && it.visibility == View.VISIBLE }
 
         if (!fileCards || !wanted(url) || spoiler) {
             old?.undo?.invoke()
@@ -261,6 +234,22 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
         }
     }
 
+    private fun hookLinks() {
+        val hook = object : XC_MethodHook() {
+            override fun beforeHookedMethod(param: MethodHookParam) {
+                val intent = param.args[0] as? Intent ?: return
+                val url = intent.dataString
+                if (intent.action != Intent.ACTION_VIEW || stage != null || !viewer || !wanted(url)) return
+                if (show(param.thisObject as Context, url!!, 0, null, null)) param.result = null
+            }
+        }
+        val intent = Intent::class.java
+        val bundle = Bundle::class.java
+        hooks += XposedBridge.hookMethod(Activity::class.java.getMethod("startActivity", intent, bundle), hook)
+        hooks += XposedBridge.hookMethod(ContextWrapper::class.java.getMethod("startActivity", intent), hook)
+        hooks += XposedBridge.hookMethod(ContextWrapper::class.java.getMethod("startActivity", intent, bundle), hook)
+    }
+
     fun hold(from: View): Boolean {
         var at: View? = from
         while (at != null) {
@@ -271,7 +260,7 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
     }
 
     fun claim(tile: Tile) {
-        if (active !== tile) active?.halt()
+        if (active !== tile) active?.park()
         active = tile
         audio(true)
     }
@@ -282,86 +271,80 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
         if (stage == null) audio(false)
     }
 
+    fun returning(tile: Tile) = leaver === tile
+
     private fun audio(on: Boolean) {
         if (Build.VERSION.SDK_INT < 26) return
         val manager = app?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-        if (on) {
-            val request = focus ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
-                        .build(),
-                )
-                .setOnAudioFocusChangeListener { change ->
-                    if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-                        active?.halt()
-                        stage?.pause(true)
-                    }
-                }
-                .build()
-                .also { focus = it }
-            manager.requestAudioFocus(request)
-        } else {
+        if (!on) {
             focus?.let(manager::abandonAudioFocusRequest)
+            return
         }
+        val request = focus ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                    .build(),
+            )
+            .setOnAudioFocusChangeListener { change ->
+                if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                    active?.park()
+                    stage?.pause(true)
+                }
+            }
+            .build()
+            .also { focus = it }
+        manager.requestAudioFocus(request)
     }
-
-    private var activeUrl: String? = null
 
     fun full(tile: Tile) {
-        activeUrl = tile.url
-        val owner = tile.parent as? View
-        val floating = owner != null && owner.javaClass.simpleName == "MediaView"
+        if (!viewer) return
         val at = tile.spot()
-        still = tile.still()
+        val still = tile.still()
         val reel = tile.hand(still)
         active = null
-        if (viewer) {
-            handed = reel
-            if (show(tile, at)) {
-                main.postDelayed({
-                    if (handed === reel && reel != null) {
-                        handed = null
-                        tile.back(at, null)
-                        tile.take(reel)
-                        reel.mp.pause()
-                    }
-                }, 5000)
-                return
-            }
-            handed = null
-        }
-        reel?.stop(this)
-        open(tile.url, false, if (floating) owner else tile, at)
+        val going = Handoff(tile, reel, still, at)
+        handoff = going
+        if (!show(tile.context, tile.url, at, tile.box, still)) return restore()
+        main.postDelayed({ if (handoff === going) restore() }, 5000)
     }
 
-    private fun show(tile: Tile, at: Long): Boolean = runCatching {
-        val box = tile.box
+    private fun restore() {
+        val back = handoff ?: return
+        handoff = null
+        back.tile.back(back.at, null)
+        active = back.tile
+        back.tile.take(back.reel)
+        back.reel?.mp?.pause()
+    }
+
+    private fun show(from: Context, url: String, at: Long, box: View?, still: Bitmap?): Boolean = runCatching {
+        val metrics = from.resources.displayMetrics
         val spot = IntArray(2)
-        box.getLocationInWindow(spot)
-        val density = tile.resources.displayMetrics.density
+        box?.getLocationInWindow(spot)
+        val width = box?.width ?: metrics.widthPixels
+        val height = box?.height ?: (metrics.widthPixels * 9 / 16)
         val text = JSONObject()
             .put("type", "open")
-            .put("url", tile.url)
+            .put("url", url)
             .put("at", at)
-            .put("x", spot[0] / density)
-            .put("y", spot[1] / density)
-            .put("width", box.width / density)
-            .put("height", box.height / density)
-            .put("poster", posters.file(tile.url)?.path ?: JSONObject.NULL)
+            .put("x", (if (box != null) spot[0] else 0) / metrics.density)
+            .put("y", (if (box != null) spot[1] else (metrics.heightPixels - height) / 2) / metrics.density)
+            .put("width", width / metrics.density)
+            .put("height", height / metrics.density)
+            .put("poster", posters.file(url)?.path ?: JSONObject.NULL)
             .put("frame", still?.let(posters::now)?.path ?: JSONObject.NULL)
             .toString()
-        var context: Context = tile.context
-        while (true) {
+        var context: Context? = from
+        while (context != null) {
             val emit = runCatching { context.javaClass.getMethod("emitDeviceEvent", String::class.java, Any::class.java) }.getOrNull()
             if (emit != null) {
                 emit.invoke(context, "mlemvlc", text)
                 return@runCatching true
             }
-            context = (context as? ContextWrapper)?.baseContext ?: return@runCatching false
+            context = (context as? ContextWrapper)?.baseContext
         }
-        @Suppress("UNREACHABLE_CODE")
         false
     }.getOrDefault(false)
 
@@ -375,11 +358,10 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
                 allVideos
             }
             "open" -> {
-                main.post {
-                    mount(id!!, args[2] as String, (args[3] as Number).toLong(), args[4] == true, args[5] == true, 0)
-                }
+                main.post { mount(id!!, args[2] as String, (args[3] as Number).toLong(), args[4] == true, args[5] == true, 0) }
                 null
             }
+            "missed" -> main.post(::restore)
             "poll" -> live?.poll()
             "tracks" -> live?.tracks()
             "pause" -> main.post { live?.pause(args[2] == true) }
@@ -392,17 +374,20 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
             "pick" -> main.post { live?.pick(args[2] as String, (args[3] as Number).toInt()) }
             "rate" -> main.post { live?.rate((args[2] as Number).toDouble()) }
             "save" -> main.post { save(args[1] as String, args[2] as String) }
-            "old" -> open(args[1] as String, false, null, (args[2] as Number).toLong())
             "leaving" -> main.post { stage?.let(::leaving) }
             "close" -> main.post {
-                if (live != null) {
-                    leaving(live)
-                    val tile = leaver
-                    leaver = null
-                    val reel = live.give()
-                    stage = null
-                    if (reel != null && tile?.isAttachedToWindow == true) tile.take(reel) else reel?.stop(this)
-                    audio(false)
+                if (live == null) return@post
+                leaving(live)
+                val tile = leaver
+                leaver = null
+                val reel = live.give()
+                stage = null
+                audio(false)
+                if (tile?.isAttachedToWindow == true) {
+                    if (reel != null) active = tile
+                    tile.take(reel)
+                } else {
+                    reel?.stop(this)
                 }
             }
             else -> null
@@ -430,13 +415,15 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
                     return@post
                 }
                 stage?.close()
+                leaver?.let {
+                    leaver = null
+                    it.take(null)
+                }
                 muted = quiet
                 audio(true)
-                val image = still
-                still = null
-                val reel = handed?.takeIf { activeUrl == url }
-                handed = null
-                stage = Stage(host.context, id, url, this, at, paused, quiet, image, reel).also { it.mount(host) }
+                val given = handoff?.takeIf { it.tile.url == url }
+                handoff = null
+                stage = Stage(host.context, id, url, this, at, paused, quiet, given?.still, given?.reel).also { it.mount(host) }
             }
         }
     }
@@ -446,32 +433,43 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
         val key = res.getIdentifier("view_tag_native_id", "id", root.context.packageName).takeIf { it != 0 }
             ?: res.getIdentifier("view_tag_native_id", "id", "com.discord")
         fun walk(view: View): ViewGroup? {
-            if (view is ViewGroup) {
-                if (view.getTag(key) == id) return view
-                for (i in 0 until view.childCount) walk(view.getChildAt(i))?.let { return it }
-            }
+            if (view !is ViewGroup) return null
+            if (view.getTag(key) == id) return view
+            for (i in 0 until view.childCount) walk(view.getChildAt(i))?.let { return it }
             return null
         }
         return walk(root)
     }
 
-    fun download(url: String, name: String) {
-        save(url, name)
-        app?.let { Toast.makeText(it, "Downloading $name", Toast.LENGTH_SHORT).show() }
-    }
-
     private fun save(url: String, name: String) {
         val context = app ?: return
-        val request = DownloadManager.Request(Uri.parse(url))
-            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name.ifEmpty { Uri.parse(url).lastPathSegment ?: "video" })
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-        (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+        val file = name.ifEmpty { Uri.parse(url).lastPathSegment ?: "video" }
+        val cached = cache?.file(url)
+        if (cached != null && Build.VERSION.SDK_INT >= 29) {
+            disk.execute {
+                runCatching {
+                    val values = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, file)
+                        put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    }
+                    val target = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)!!
+                    context.contentResolver.openOutputStream(target)!!.use { out -> cached.inputStream().use { it.copyTo(out) } }
+                }
+            }
+            return
+        }
+        runCatching {
+            val request = DownloadManager.Request(Uri.parse(url))
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, file)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+        }
     }
 
     fun queuePeek(tile: Tile) {
         if (posters.missed(tile.url) || tile in waiting || peeking === tile) return
         waiting.addLast(tile)
-        main.postDelayed({ nextPeek() }, 260)
+        main.postDelayed(::nextPeek, 260)
     }
 
     fun dropPeek(tile: Tile) {
@@ -480,23 +478,18 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
 
     fun peeked() {
         peeking = null
-        main.post { nextPeek() }
+        main.post(::nextPeek)
     }
 
     private fun nextPeek() {
         if (peeking != null || !alive) return
-        val tile = waiting.removeFirstOrNull() ?: return
-        peeking = tile
-        tile.peek()
+        peeking = waiting.removeFirstOrNull()?.also { it.peek() }
     }
 
     private fun mediaOf(view: View, media: Class<*>): View? {
         var at: View? = view
-        while (at != null) {
-            if (at.javaClass == media) return at
-            at = at.parent as? View
-        }
-        return null
+        while (at != null && at.javaClass != media) at = at.parent as? View
+        return at
     }
 
     private fun sourceOf(view: Any): Source? {
@@ -506,47 +499,18 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
             val value = field.get(view) ?: continue
             val name = value.javaClass.name
             if (name.startsWith("android") || name.startsWith("java") || name.startsWith("kotlin")) continue
-            val text = runCatching { value.toString() }.getOrNull() ?: continue
-            val match = described.find(text) ?: continue
+            val match = described.find(runCatching { value.toString() }.getOrNull() ?: continue) ?: continue
             return Source(match.groupValues[1], match.groupValues[2], match.groupValues[3] == "true")
         }
         return null
     }
 
-    private fun hookLinks() {
-        val hook = object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) {
-                val intent = param.args[0] as? Intent ?: return
-                if (intent.action != Intent.ACTION_VIEW) return
-                val url = intent.dataString
-                if (stage != null || !wanted(url)) return
-                param.result = null
-                open(url!!, false)
-            }
-        }
-
-        val intent = Intent::class.java
-        val bundle = Bundle::class.java
-        hooks += XposedBridge.hookMethod(Activity::class.java.getMethod("startActivity", intent, bundle), hook)
-        hooks += XposedBridge.hookMethod(ContextWrapper::class.java.getMethod("startActivity", intent), hook)
-        hooks += XposedBridge.hookMethod(ContextWrapper::class.java.getMethod("startActivity", intent, bundle), hook)
-    }
-
     fun warm(): Core {
         core?.let { return it }
-
-        val vlc = LibVLC(
-            app!!,
-            arrayListOf(
-                "--no-stats",
-                "--no-osd",
-                "--no-snapshot-preview",
-                "--audio-time-stretch",
-                "--http-reconnect",
-            ),
-        )
+        val vlc = LibVLC(app!!, arrayListOf("--stats", "--no-osd", "--no-snapshot-preview", "--audio-time-stretch", "--http-reconnect"))
         vlc.setUserAgent("Discord", "Discord-Android")
-        return Core(vlc, MediaPlayer(vlc), MediaPlayer(vlc), MediaPlayer(vlc)).also {
+        val cache = Cache(File(app!!.cacheDir, "app_media_player_vlc"))
+        return Core(vlc, MediaPlayer(vlc), MediaPlayer(vlc), MediaPlayer(vlc), cache).also {
             core = it
             scope.log.i("vlc ready ${LibVLC.version()}")
         }
@@ -559,7 +523,6 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
         hooks.forEach { it.unhook() }
         hooks.clear()
         main.post {
-            overlay?.dismiss()
             stage?.close()
             waiting.clear()
             tiles.toList().forEach {
@@ -568,11 +531,12 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
             }
             active = null
             worker.execute {
-                core?.let {
-                    it.player.release()
-                    it.inline.release()
-                    it.peek.release()
-                    it.vlc.release()
+                core?.run {
+                    cache.close()
+                    player.release()
+                    inline.release()
+                    peek.release()
+                    vlc.release()
                 }
                 core = null
             }

@@ -79,6 +79,7 @@ function VlcVideo({ controls, muted, onError, onLoad, onLoadStart, paused, sourc
 					currentTime: now.time,
 					seekableDuration: now.length,
 				})
+				controls.props.onDownloadProgress?.({ progressPercent: now.loaded })
 			}
 		}, 250)
 		return () => {
@@ -289,9 +290,11 @@ function Buttons({ mute }: { mute: any }) {
 	)
 }
 
+let modal: any
 function viewerModule() {
+	if (modal) return modal
 	const [found] = lookupModule(withProps<any>('openMediaModal'))
-	if (found) return found
+	if (found) return (modal = found)
 	const [, sheets] = lookupModule(withProps<any>('openLazy'))
 	const [, screens] = lookupModule(withProps<any>('pushLazy'))
 	for (let id = 0; id < 40000; id++) {
@@ -300,7 +303,7 @@ function viewerModule() {
 		if (!deps.includes(sheets) || !deps.includes(screens)) continue
 		try {
 			const loaded = (globalThis as any).__r(id)
-			if (loaded?.openMediaModal) return loaded
+			if (loaded?.openMediaModal) return (modal = loaded)
 		} catch {}
 	}
 }
@@ -311,7 +314,7 @@ function openViewer(raw: string) {
 	try {
 		showViewer(at)
 	} catch {
-		stage('old', at.url, at.at)
+		stage('missed')
 	}
 }
 

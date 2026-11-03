@@ -10,7 +10,6 @@ import android.graphics.Outline
 import android.graphics.SurfaceTexture
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.view.GestureDetector
@@ -25,7 +24,6 @@ import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.ProgressBar
-import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -49,16 +47,15 @@ class Tile(
     var undo: (() -> Unit)? = null
 
     private var pending = false
-    private val relayout: Runnable = Runnable {
+    private val relayout = Runnable {
         pending = false
-        inner.measure(
-            MeasureSpec.makeMeasureSpec(inner.width, MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(inner.height, MeasureSpec.EXACTLY),
+        body.measure(
+            MeasureSpec.makeMeasureSpec(body.width, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(body.height, MeasureSpec.EXACTLY),
         )
-        inner.layout(inner.left, inner.top, inner.right, inner.bottom)
+        body.layout(body.left, body.top, body.right, body.bottom)
     }
-
-    private val inner: FrameLayout = object : FrameLayout(context) {
+    private val body: FrameLayout = object : FrameLayout(context) {
         override fun requestLayout() {
             super.requestLayout()
             if (width > 0 && !pending) {
@@ -67,8 +64,7 @@ class Tile(
             }
         }
     }
-    private val body: FrameLayout get() = inner
-    val box: View get() = inner
+    val box: View get() = body
     private val veil = View(context).apply { setBackgroundColor(0xFF1E1F22.toInt()) }
     private val poster = ImageView(context).apply {
         scaleType = ImageView.ScaleType.CENTER_CROP
@@ -91,14 +87,17 @@ class Tile(
     private var aspect = engine.posters.aspect(url) ?: (16f / 9f)
     private var sizing: ValueAnimator? = null
     private var video: TextureView? = null
-    private var player: MediaPlayer? = null
     private var reel: Reel? = null
+    private val player get() = reel?.mp
+    private var peekReel: Reel? = null
     private var peeking = false
+    private var peekDone = false
     private var session = 0
     private var started = false
     private var shown = false
     private var playing = false
     private var held = false
+    private var wanted = false
     private var resume = 0L
     private var seekTo = 0L
     var away = false
@@ -132,7 +131,7 @@ class Tile(
             }
         }
         body.clipToOutline = true
-        body.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> syncWindow() }
+        body.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> (reel ?: peekReel)?.fit(body) }
 
         if (!floating) {
             body.addView(veil, LayoutParams(-1, -1))
@@ -169,10 +168,7 @@ class Tile(
     }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
-        if (floating) {
-            super.onMeasure(widthSpec, heightSpec)
-            return
-        }
+        if (floating) return super.onMeasure(widthSpec, heightSpec)
         val w = MeasureSpec.getSize(widthSpec)
         val cap = (resources.displayMetrics.heightPixels * 0.42f).toInt()
         var innerW = w
@@ -190,12 +186,8 @@ class Tile(
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        if (floating) return
-        if (poster.drawable == null) {
-            engine.posters.load(url) { image ->
-                if (image != null) showPoster(image) else engine.queuePeek(this)
-            }
-        }
+        if (floating || poster.drawable != null) return
+        engine.posters.load(url) { image -> if (image != null) showPoster(image) else engine.queuePeek(this) }
     }
 
     override fun onDetachedFromWindow() {
@@ -257,83 +249,55 @@ class Tile(
         body.addView(it, 0, LayoutParams(-1, -1))
     }
 
-    private fun item(core: Core, quiet: Boolean) = Media(core.vlc, Uri.parse(url)).apply {
-        setHWDecoderEnabled(true, false)
-        addOption(":network-caching=350")
-        addOption(":file-caching=150")
-        if (quiet) {
-            addOption(":no-spu")
-            addOption(":no-audio")
-            addOption(":start-time=1")
+    private fun load(pick: (Core) -> MediaPlayer, quiet: Boolean, run: Int, handle: (MediaPlayer.Event) -> Unit, made: (Reel) -> Unit, fail: () -> Unit) {
+        val view = surface()
+        if (floating && !quiet) view.alpha = 0f
+        val texture = SurfaceTexture(false)
+        Reel.show(view, texture)
+        engine.worker.execute {
+            val core = runCatching { engine.warm() }.getOrElse {
+                main.post { if (run == session) fail() }
+                return@execute
+            }
+            val media = engine.media(core, url, quiet)
+            main.post {
+                if (run != session) return@post media.release()
+                runCatching {
+                    Reel(pick(core), texture).also {
+                        made(it)
+                        it.mp.setEventListener { event -> main.post { if (run == session) handle(event) } }
+                        it.play(media, body)
+                    }
+                }.onFailure { fail() }
+            }
         }
-    }
-
-    private fun bind(mp: MediaPlayer, view: TextureView) {
-        mp.vlcVout.apply {
-            setVideoView(view)
-            attachViews()
-        }
-        syncWindow(mp)
-    }
-
-    private fun syncWindow(mp: MediaPlayer? = player ?: peekPlayer) {
-        if (body.width > 0 && body.height > 0) mp?.vlcVout?.setWindowSize(body.width, body.height)
     }
 
     fun start() {
-        reel?.let {
-            if (started) return
-            started = true
-            shown = false
-            engine.claim(this)
+        if (engine.returning(this)) {
+            wanted = true
             center.visibility = GONE
-            speaker.visibility = VISIBLE
-            sound()
+            return
+        }
+        if (started) return
+        started = true
+        shown = false
+        engine.claim(this)
+        center.visibility = GONE
+        speaker.visibility = VISIBLE
+        sound()
+        reel?.let {
+            it.show(surface())
+            it.fit(body)
             it.mp.play()
             return
         }
-        if (player != null) return
         engine.dropPeek(this)
         finishPeek()
-        engine.claim(this)
-
-        val run = ++session
         seekTo = resume
         resume = 0
-        started = true
-        shown = false
-        center.visibility = GONE
         if (seekTo > 0) main.postDelayed(showSpinner, 250) else spinner.visibility = VISIBLE
-        speaker.visibility = VISIBLE
-        sound()
-        val view = surface()
-        if (floating) view.alpha = 0f
-        val texture = SurfaceTexture(false)
-        Reel.show(view, texture)
-
-        engine.worker.execute {
-            val core = runCatching { engine.warm() }.getOrElse {
-                main.post { if (run == session) halt() }
-                return@execute
-            }
-            val made = item(core, false)
-            main.post {
-                if (run != session) {
-                    made.release()
-                    return@post
-                }
-                runCatching {
-                    val mp = core.inline
-                    val made2 = Reel(mp, texture)
-                    reel = made2
-                    player = mp
-                    mp.setEventListener { event -> main.post { if (run == session) onEvent(event) } }
-                    made2.attach()
-                    syncWindow(mp)
-                    mp.play(made)
-                }.onFailure { halt() }
-            }
-        }
+        load({ it.inline }, false, ++session, ::onEvent, { reel = it }, ::halt)
     }
 
     private fun onEvent(event: MediaPlayer.Event) {
@@ -350,11 +314,7 @@ class Tile(
             MediaPlayer.Event.Paused -> playing = false
             MediaPlayer.Event.Buffering -> if (shown) {
                 main.removeCallbacks(showSpinner)
-                if (event.buffering < 100f && playing) {
-                    main.postDelayed(showSpinner, 300)
-                } else {
-                    spinner.visibility = GONE
-                }
+                if (event.buffering < 100f && playing) main.postDelayed(showSpinner, 300) else spinner.visibility = GONE
             }
             MediaPlayer.Event.TimeChanged -> if (event.timeChanged > 0 && !shown && event.timeChanged >= seekTo - 400) {
                 if (seekTo > 0) {
@@ -414,16 +374,11 @@ class Tile(
     private fun reveal() {
         main.removeCallbacks(showSpinner)
         spinner.visibility = GONE
-        if (floating) {
-            video?.animate()?.alpha(1f)?.setDuration(170)?.start()
-            poster.animate().cancel()
-            poster.animate().alpha(0f).setDuration(170).start()
-        } else {
-            veil.animate().cancel()
-            veil.alpha = 0f
-            poster.animate().cancel()
-            poster.animate().alpha(0f).setDuration(170).start()
-        }
+        if (floating) video?.animate()?.alpha(1f)?.setDuration(170)?.start()
+        veil.animate().cancel()
+        veil.alpha = 0f
+        poster.animate().cancel()
+        poster.animate().alpha(0f).setDuration(170).start()
     }
 
     private fun frame(view: TextureView?): Bitmap? {
@@ -437,26 +392,28 @@ class Tile(
         poster.animate().alpha(1f).setDuration(180).start()
     }
 
-    private fun stop(mp: MediaPlayer) {
+    private fun cover(image: Bitmap?) {
+        image?.let(poster::setImageBitmap)
+        veil.animate().cancel()
+        veil.alpha = 1f
+        poster.animate().cancel()
+        poster.alpha = if (poster.drawable != null) 1f else 0f
+    }
+
+    private fun stop() {
+        val running = reel ?: return
         val image = if (shown && playing) frame(video) else null
         val view = video
-        val running = reel
         reel = null
-        player = null
         video = null
         playing = false
         held = false
         session++
         main.removeCallbacks(showSpinner)
         spinner.visibility = GONE
-        running?.stop(engine) { view?.let(body::removeView) }
+        running.stop(engine) { view?.let(body::removeView) }
         engine.released(this)
-
-        image?.let(poster::setImageBitmap)
-        veil.animate().cancel()
-        veil.alpha = 1f
-        poster.animate().cancel()
-        poster.alpha = if (poster.drawable != null) 1f else 0f
+        cover(image)
     }
 
     fun spot() = player?.time?.coerceAtLeast(0) ?: resume
@@ -467,15 +424,10 @@ class Tile(
         main.removeCallbacks(showSpinner)
         speaker.visibility = GONE
         spinner.visibility = GONE
-        image?.let(poster::setImageBitmap)
-        poster.animate().cancel()
-        poster.alpha = if (poster.drawable != null) 1f else 0f
-        veil.animate().cancel()
-        veil.alpha = 1f
-        player?.setEventListener(null)
+        cover(image)
+        given?.mp?.setEventListener(null)
         video?.let(body::removeView)
         video = null
-        player = null
         reel = null
         playing = false
         session++
@@ -501,100 +453,61 @@ class Tile(
         speaker.visibility = GONE
     }
 
-    fun mirror(image: Bitmap) {
-        poster.setImageBitmap(image)
+    fun mirror(image: Bitmap) = poster.setImageBitmap(image)
+
+    fun take(given: Reel?) {
+        if (given != null) {
+            val run = ++session
+            reel = given
+            resume = 0
+            given.mp.setEventListener { event -> main.post { if (run == session) onEvent(event) } }
+        }
+        if (wanted) {
+            wanted = false
+            start()
+        }
     }
 
-    fun take(given: Reel) {
-        val mp = given.mp
-        val run = ++session
-        val view = surface()
-        reel = given
-        player = mp
-        resume = 0
-        given.show(view)
-        mp.setEventListener { event -> main.post { if (run == session) onEvent(event) } }
-        syncWindow(mp)
+    fun park() {
+        val at = if (started) 0 else spot()
+        halt()
+        resume = at
     }
 
     fun halt() {
         started = false
         away = false
+        wanted = false
         resume = 0
-        player?.let(::stop)
-        if (floating) {
-            leave()
-            return
-        }
+        stop()
+        if (floating) return leave()
         center.visibility = VISIBLE
         speaker.visibility = GONE
     }
 
     private fun leave() {
-        if (!floating || left) return
+        if (left) return
         left = true
         undo?.invoke()
         undo = null
         (parent as? ViewGroup)?.removeView(this)
     }
 
-    private fun release(mp: MediaPlayer, view: TextureView?) {
-        runCatching {
-            engine.worker.execute {
-                mp.setEventListener(null)
-                mp.stop()
-                mp.setMedia(null)
-                main.post {
-                    mp.vlcVout.detachViews()
-                    view?.let(body::removeView)
-                }
-            }
-        }
-    }
-
     fun peek() {
-        if (player != null || peeking || !isAttachedToWindow) {
-            engine.peeked()
-            return
-        }
+        if (reel != null || peeking || !isAttachedToWindow) return engine.peeked()
         peeking = true
-        val run = ++session
-        val view = surface()
-        val to = this
-        engine.worker.execute {
-            val core = runCatching { engine.warm() }.getOrElse {
-                main.post { if (run == session) finishPeek() }
-                return@execute
-            }
-            val made = item(core, true)
-            main.post {
-                if (run != session) {
-                    made.release()
-                    return@post
-                }
-                runCatching {
-                    val mp = core.peek
-                    peekPlayer = mp
-                    mp.setEventListener { event -> main.post { if (run == session) to.onPeek(event) } }
-                    bind(mp, view)
-                    mp.play(made)
-                    main.postDelayed(giveUp, 9000)
-                }.onFailure { finishPeek() }
-            }
-        }
+        load({ it.peek }, true, ++session, ::onPeek, { peekReel = it }, ::finishPeek)
+        main.postDelayed(giveUp, 9000)
     }
-
-    private var peekPlayer: MediaPlayer? = null
-    private var peekDone = false
 
     private fun onPeek(event: MediaPlayer.Event) {
         when (event.type) {
             MediaPlayer.Event.TimeChanged -> if (!peekDone && event.timeChanged > 0) {
-                val mp = peekPlayer ?: return
+                val mp = peekReel?.mp ?: return
                 val before = aspect
                 if (!adopt(mp)) return
                 peekDone = true
-                main.postDelayed({ capture() }, if (sizing?.isRunning == true || aspect != before) 720 else 320)
+                main.postDelayed(::capture, if (sizing?.isRunning == true || aspect != before) 720 else 320)
             }
             MediaPlayer.Event.EncounteredError, MediaPlayer.Event.EndReached -> {
                 engine.posters.miss(url)
@@ -604,10 +517,9 @@ class Tile(
     }
 
     private fun capture() {
-        val image = frame(video)
-        if (image != null) {
-            engine.posters.save(url, image)
-            showPoster(image)
+        frame(video)?.let {
+            engine.posters.save(url, it)
+            showPoster(it)
         }
         finishPeek()
     }
@@ -618,15 +530,11 @@ class Tile(
         peekDone = false
         session++
         main.removeCallbacks(giveUp)
-        val mp = peekPlayer
         val view = video
-        peekPlayer = null
         video = null
-        if (mp != null) {
-            release(mp, view)
-        } else {
-            view?.let(body::removeView)
-        }
+        val gone = { view?.let(body::removeView); Unit }
+        peekReel?.stop(engine, gone) ?: gone()
+        peekReel = null
         engine.peeked()
     }
 }

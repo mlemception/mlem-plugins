@@ -4,11 +4,11 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.view.HapticFeedbackConstants
 import android.view.TextureView
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -24,25 +24,24 @@ private val keep = object : TextureView.SurfaceTextureListener {
     override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {}
 }
 
-class Reel(val mp: MediaPlayer, private val texture: SurfaceTexture) {
+class Reel(val mp: MediaPlayer, private val texture: SurfaceTexture = SurfaceTexture(false)) {
     var speech: Int? = null
     var text: Int? = null
     var speed = 1f
 
-    fun attach() {
+    fun show(view: TextureView) = show(view, texture)
+
+    fun fit(view: View) {
+        if (view.width > 0 && view.height > 0) mp.vlcVout.setWindowSize(view.width, view.height)
+    }
+
+    fun play(media: Media, size: View) {
         mp.vlcVout.apply {
             setVideoSurface(texture)
             attachViews()
         }
-    }
-
-    fun show(view: TextureView) = show(view, texture)
-
-    companion object {
-        fun show(view: TextureView, texture: SurfaceTexture) {
-            view.surfaceTextureListener = keep
-            view.setSurfaceTexture(texture)
-        }
+        fit(size)
+        mp.play(media)
     }
 
     fun stop(engine: Engine, done: () -> Unit = {}) {
@@ -57,6 +56,13 @@ class Reel(val mp: MediaPlayer, private val texture: SurfaceTexture) {
                 texture.release()
                 done()
             }
+        }
+    }
+
+    companion object {
+        fun show(view: TextureView, texture: SurfaceTexture) {
+            view.surfaceTextureListener = keep
+            view.setSurfaceTexture(texture)
         }
     }
 }
@@ -90,7 +96,7 @@ class Stage(
             main.postDelayed(this, 500)
         }
     }
-    private var player: MediaPlayer? = null
+    private val player get() = reel?.mp
     private var closed = false
     private var ready = false
     private var failed = false
@@ -119,10 +125,9 @@ class Stage(
 
     private fun adopt(given: Reel) {
         val mp = given.mp
-        player = mp
         given.show(video)
         mp.setEventListener { event -> main.post { if (!closed) onEvent(event) } }
-        sync()
+        given.fit(this)
         mp.currentVideoTrack?.let {
             width0 = it.width
             height0 = it.height
@@ -136,10 +141,8 @@ class Stage(
         reveal()
     }
 
-    private fun reveal() {
-        whenPainted(video) {
-            cover.animate().alpha(0f).setDuration(120).withEndAction { cover.visibility = GONE }.start()
-        }
+    private fun reveal() = whenPainted(video) {
+        cover.animate().alpha(0f).setDuration(120).withEndAction { cover.visibility = GONE }.start()
     }
 
     private fun fit(host: ViewGroup) {
@@ -148,11 +151,7 @@ class Stage(
             MeasureSpec.makeMeasureSpec(host.height, MeasureSpec.EXACTLY),
         )
         layout(0, 0, host.width, host.height)
-        sync()
-    }
-
-    private fun sync() {
-        if (width > 0 && height > 0) player?.vlcVout?.setWindowSize(width, height)
+        reel?.fit(this)
     }
 
     override fun onWindowVisibilityChanged(visibility: Int) {
@@ -168,36 +167,22 @@ class Stage(
         }
     }
 
-    private fun start() {
-        engine.worker.execute {
-            val core = runCatching { engine.warm() }.getOrElse {
-                failed = true
-                return@execute
-            }
-            val made = Media(core.vlc, Uri.parse(url)).apply {
-                setHWDecoderEnabled(true, false)
-                addOption(":network-caching=350")
-                addOption(":file-caching=150")
-            }
-            main.post {
-                if (closed) {
-                    made.release()
-                    return@post
-                }
-                runCatching {
-                    val mp = core.player
-                    player = mp
-                    val texture = SurfaceTexture(false)
-                    val made2 = Reel(mp, texture)
-                    reel = made2
-                    made2.show(video)
-                    mp.setEventListener { event -> main.post { if (!closed) onEvent(event) } }
-                    made2.attach()
-                    sync()
-                    mp.rate = 1f
-                    mp.play(made)
-                }.onFailure { failed = true }
-            }
+    private fun start() = engine.worker.execute {
+        val core = runCatching { engine.warm() }.getOrElse {
+            failed = true
+            return@execute
+        }
+        val media = engine.media(core, url)
+        main.post {
+            if (closed) return@post media.release()
+            runCatching {
+                val made = Reel(core.player)
+                reel = made
+                made.show(video)
+                made.mp.setEventListener { event -> main.post { if (!closed) onEvent(event) } }
+                made.mp.rate = 1f
+                made.play(media, this)
+            }.onFailure { failed = true }
         }
     }
 
@@ -254,7 +239,22 @@ class Stage(
         "failed" to failed,
         "width" to width0,
         "height" to height0,
+        "loaded" to loaded(),
     )
+
+    private fun loaded(): Double {
+        val cache = engine.cache ?: return 0.0
+        val size = cache.total(url).takeIf { it > 0 }?.toDouble() ?: return 0.0
+        if (length <= 0) return 0.0
+        val at = time.toDouble() / length
+        val disk = cache.have(url) / size
+        if (disk >= at) return if (disk > 0.995) 1.0 else disk
+        val media = player?.media ?: return at
+        val stats = media.stats
+        media.release()
+        val ahead = ((stats?.readBytes ?: 0) - (stats?.demuxReadBytes ?: 0)).coerceAtLeast(0) / size
+        return (at + ahead).coerceAtMost(1.0)
+    }
 
     fun pause(value: Boolean) {
         paused = value
@@ -268,18 +268,15 @@ class Stage(
     }
 
     fun seek(seconds: Double) {
-        val to = (seconds * 1000).toLong()
-        time = to
-        player?.setTime(to)
+        time = (seconds * 1000).toLong()
+        player?.setTime(time)
     }
 
     fun skip(forward: Boolean) {
-        val delta = if (forward) skipBy else -skipBy
         val mp = player ?: return
-        val to = (time + delta).coerceIn(0, if (length > 0) length else Long.MAX_VALUE)
-        time = to
-        mp.setTime(to)
-        ripple.play(delta > 0, (kotlin.math.abs(delta) / 1000).toInt())
+        time = (time + if (forward) skipBy else -skipBy).coerceIn(0, if (length > 0) length else Long.MAX_VALUE)
+        mp.setTime(time)
+        ripple.play(forward, (skipBy / 1000).toInt())
         performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
     }
 
@@ -319,7 +316,6 @@ class Stage(
         if (closed) return null
         closed = true
         player?.setEventListener(null)
-        player = null
         (parent as? ViewGroup)?.removeView(this)
         return reel.also { reel = null }
     }
