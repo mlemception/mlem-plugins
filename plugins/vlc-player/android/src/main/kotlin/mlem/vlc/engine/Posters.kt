@@ -75,10 +75,10 @@ class Posters(private val root: File, private val disk: ExecutorService) {
         }
     }
 
-    fun save(url: String, image: Bitmap) {
+    fun save(url: String, image: Bitmap, ratio: Float) {
         val name = key(url)
         memory.put(name, image)
-        val file = File(dir, "$name-${image.width}-${image.height}.jpg")
+        val file = File(dir, "$name-${(ratio * 10000).toInt()}-10000.jpg")
         files[name] = file
         runCatching {
             disk.execute {

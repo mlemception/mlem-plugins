@@ -4,9 +4,12 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.HapticFeedbackConstants
+import android.view.PixelCopy
+import android.view.Surface
 import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
@@ -17,22 +20,29 @@ import org.videolan.libvlc.MediaPlayer
 
 private const val skipBy = 10_000L
 
-private val keep = object : TextureView.SurfaceTextureListener {
-    override fun onSurfaceTextureAvailable(texture: SurfaceTexture, w: Int, h: Int) {}
-    override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, w: Int, h: Int) {}
-    override fun onSurfaceTextureDestroyed(texture: SurfaceTexture) = false
-    override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {}
-}
-
 class Reel(val mp: MediaPlayer, private val texture: SurfaceTexture = SurfaceTexture(false)) {
     var speech: Int? = null
     var text: Int? = null
     var speed = 1f
+    private var copy: Surface? = null
 
     fun show(view: TextureView) = show(view, texture)
 
+    fun grab(width: Int, height: Int, done: (Bitmap?) -> Unit) {
+        if (Build.VERSION.SDK_INT < 26 || width <= 0 || height <= 0) return done(null)
+        val surface = copy ?: Surface(texture).also { copy = it }
+        val image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        runCatching {
+            PixelCopy.request(surface, image, { done(if (it == PixelCopy.SUCCESS) image else null) }, Handler(Looper.getMainLooper()))
+        }.onFailure { done(null) }
+    }
+
+    var fill = false
+
     fun fit(view: View) {
-        if (view.width > 0 && view.height > 0) mp.vlcVout.setWindowSize(view.width, view.height)
+        if (view.width <= 0 || view.height <= 0) return
+        mp.vlcVout.setWindowSize(view.width, view.height)
+        mp.videoScale = if (fill) MediaPlayer.ScaleType.SURFACE_FIT_SCREEN else MediaPlayer.ScaleType.SURFACE_BEST_FIT
     }
 
     fun play(media: Media, size: View) {
@@ -53,6 +63,7 @@ class Reel(val mp: MediaPlayer, private val texture: SurfaceTexture = SurfaceTex
             mp.setMedia(null)
             main.post {
                 mp.vlcVout.detachViews()
+                copy?.release()
                 texture.release()
                 done()
             }
@@ -61,7 +72,7 @@ class Reel(val mp: MediaPlayer, private val texture: SurfaceTexture = SurfaceTex
 
     companion object {
         fun show(view: TextureView, texture: SurfaceTexture) {
-            view.surfaceTextureListener = keep
+            view.surfaceTextureListener = Keep()
             view.setSurfaceTexture(texture)
         }
     }
@@ -87,13 +98,21 @@ class Stage(
     }
     private val ripple = SeekRipple(context)
     private var seeking = from > 0
+    private var last: Bitmap? = null
     private val mirror = object : Runnable {
         override fun run() {
             if (closed) return
-            if (ready && playing && width > 0) {
-                runCatching { video.getBitmap(540, 540 * height / width) }.getOrNull()?.let { engine.mirror(url, it) }
-            }
+            if (ready && playing) fresh { it?.let { image -> engine.mirror(url, image) } }
             main.postDelayed(this, 500)
+        }
+    }
+
+    fun fresh(done: (Bitmap?) -> Unit) {
+        val r = reel ?: return done(null)
+        if (width <= 0) return done(null)
+        r.grab(540, 540 * height / width) { image ->
+            if (image != null) last = image
+            done(image)
         }
     }
     private val player get() = reel?.mp
@@ -125,6 +144,7 @@ class Stage(
 
     private fun adopt(given: Reel) {
         val mp = given.mp
+        given.fill = false
         given.show(video)
         mp.setEventListener { event -> main.post { if (!closed) onEvent(event) } }
         given.fit(this)
@@ -310,7 +330,7 @@ class Stage(
 
     fun position() = time
 
-    fun frame() = if (ready) runCatching { video.bitmap }.getOrNull() else still
+    fun frame() = if (ready) last ?: still else still
 
     fun give(): Reel? {
         if (closed) return null

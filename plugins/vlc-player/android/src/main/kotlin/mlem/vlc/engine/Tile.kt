@@ -264,6 +264,7 @@ class Tile(
                 if (run != session) return@post media.release()
                 runCatching {
                     Reel(pick(core), texture).also {
+                        it.fill = true
                         made(it)
                         it.mp.setEventListener { event -> main.post { if (run == session) handle(event) } }
                         it.play(media, body)
@@ -287,6 +288,7 @@ class Tile(
         speaker.visibility = VISIBLE
         sound()
         reel?.let {
+            it.fill = true
             it.show(surface())
             it.fit(body)
             it.mp.play()
@@ -338,7 +340,8 @@ class Tile(
         val track = mp.currentVideoTrack ?: return false
         if (track.width * track.height == 0) return false
         val real = track.width * max(track.sarNum, 1).toFloat() / max(track.sarDen, 1) / track.height
-        if (!floating && abs(real - aspect) > 0.01f) resize(real)
+        if (!floating && abs(real - aspect) > 0.002f) resize(real)
+        (if (mp === player) reel else peekReel)?.fit(body)
         return true
     }
 
@@ -434,10 +437,10 @@ class Tile(
         return given
     }
 
-    fun still(): Bitmap? {
-        val view = video?.takeIf { shown && it.isAvailable }
-        return runCatching { view?.getBitmap(body.width, body.height) }.getOrNull()
-            ?: (poster.drawable as? BitmapDrawable)?.bitmap
+    fun still(done: (Bitmap?) -> Unit) {
+        val fallback = (poster.drawable as? BitmapDrawable)?.bitmap
+        val running = reel?.takeIf { shown } ?: return done(fallback)
+        running.grab(body.width, body.height) { done(it ?: fallback) }
     }
 
     fun back(at: Long?, image: Bitmap?) {
@@ -517,11 +520,14 @@ class Tile(
     }
 
     private fun capture() {
-        frame(video)?.let {
-            engine.posters.save(url, it)
-            showPoster(it)
+        val grabbing = peekReel ?: return finishPeek()
+        grabbing.grab(posterWidth, (posterWidth / aspect).toInt().coerceAtLeast(1)) { image ->
+            image?.let {
+                engine.posters.save(url, it, aspect)
+                showPoster(it)
+            }
+            finishPeek()
         }
-        finishPeek()
     }
 
     private fun finishPeek() {

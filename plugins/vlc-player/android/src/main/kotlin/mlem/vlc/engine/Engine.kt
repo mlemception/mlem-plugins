@@ -93,7 +93,7 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
 
     fun media(core: Core, url: String, quiet: Boolean = false) = Media(core.vlc, Uri.parse(core.cache.local(url))).apply {
         setHWDecoderEnabled(true, false)
-        addOption(":network-caching=1000")
+        addOption(":network-caching=${if (core.cache.file(url) != null) 300 else 1000}")
         if (quiet) {
             addOption(":no-spu")
             addOption(":no-audio")
@@ -298,15 +298,29 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
         manager.requestAudioFocus(request)
     }
 
+    private var opening = false
+
     fun full(tile: Tile) {
-        if (!viewer) return
+        if (!viewer || opening) return
+        opening = true
+        tile.still { still ->
+            disk.execute {
+                val cover = still?.let { runCatching { posters.now(it) }.getOrNull() }
+                main.post {
+                    opening = false
+                    if (tile.isAttachedToWindow) handOver(tile, still, cover)
+                }
+            }
+        }
+    }
+
+    private fun handOver(tile: Tile, still: Bitmap?, cover: File?) {
         val at = tile.spot()
-        val still = tile.still()
         val reel = tile.hand(still)
         active = null
         val going = Handoff(tile, reel, still, at)
         handoff = going
-        if (!show(tile.context, tile.url, at, tile.box, still)) return restore()
+        if (!show(tile.context, tile.url, at, tile.box, cover)) return restore()
         main.postDelayed({ if (handoff === going) restore() }, 5000)
     }
 
@@ -319,7 +333,7 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
         back.reel?.mp?.pause()
     }
 
-    private fun show(from: Context, url: String, at: Long, box: View?, still: Bitmap?): Boolean = runCatching {
+    private fun show(from: Context, url: String, at: Long, box: View?, cover: File?): Boolean = runCatching {
         val metrics = from.resources.displayMetrics
         val spot = IntArray(2)
         box?.getLocationInWindow(spot)
@@ -334,7 +348,7 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
             .put("width", width / metrics.density)
             .put("height", height / metrics.density)
             .put("poster", posters.file(url)?.path ?: JSONObject.NULL)
-            .put("frame", still?.let(posters::now)?.path ?: JSONObject.NULL)
+            .put("frame", cover?.path ?: JSONObject.NULL)
             .toString()
         var context: Context? = from
         while (context != null) {
@@ -404,6 +418,7 @@ class Engine(private val scope: PluginScope) : Closeable, Supplier<String?>, Fun
         leaver = tile
         live.pause(true)
         tile.back(live.position(), live.frame())
+        live.fresh { it?.let(tile::mirror) }
     }
 
     private fun mount(id: String, url: String, at: Long, paused: Boolean, quiet: Boolean, tries: Int) {

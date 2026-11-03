@@ -5,7 +5,7 @@
 	"description": "plays discord videos in vlc. after installing, go to plugins and turn it on",
 	"author": "mlemception",
 	"icon": "PlayIcon",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

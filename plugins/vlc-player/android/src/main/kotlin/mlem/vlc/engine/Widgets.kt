@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.CornerPathEffect
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.SurfaceTexture
 import android.graphics.Typeface
 import android.view.TextureView
 import android.view.View
@@ -15,10 +16,29 @@ import android.view.animation.PathInterpolator
 
 val emphasized = PathInterpolator(0.2f, 0f, 0f, 1f)
 
-fun whenPainted(view: TextureView, tries: Int = 30, done: () -> Unit) {
-    val dot = runCatching { view.getBitmap(4, 4) }.getOrNull()
-    val lit = dot != null && (0 until 16).any { dot.getPixel(it % 4, it / 4) and 0xFFFFFF != 0 }
-    if (lit || tries == 0) done() else view.postDelayed({ whenPainted(view, tries - 1, done) }, 40)
+class Keep : TextureView.SurfaceTextureListener {
+    var next: (() -> Unit)? = null
+    override fun onSurfaceTextureAvailable(texture: SurfaceTexture, w: Int, h: Int) {}
+    override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, w: Int, h: Int) {}
+    override fun onSurfaceTextureDestroyed(texture: SurfaceTexture) = false
+    override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {
+        next?.let {
+            next = null
+            it()
+        }
+    }
+}
+
+fun whenPainted(view: TextureView, done: () -> Unit) {
+    var fired = false
+    val once = {
+        if (!fired) {
+            fired = true
+            done()
+        }
+    }
+    (view.surfaceTextureListener as? Keep)?.next = once
+    view.postDelayed({ once() }, 600)
 }
 
 fun asset(context: Context, name: String, fallback: Int): Drawable? {
