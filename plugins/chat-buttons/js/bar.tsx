@@ -157,21 +157,30 @@ export const markOwn = (node: any): any => {
 	}
 	if (!isValidElement(node)) return node
 	const p = node.props as any
-	if (node.type === Popup) return { ...node, props: { ...p, own: true } }
+	if (node.type === Popup) return { ...node, props: { ...p, [mine]: true } }
 	const children = markOwn(p.children)
 	return children === p.children ? node : { ...node, props: { ...p, children } }
 }
 
-export function Popup({ real: Real, props, jsx, own }: any) {
+const mine = Symbol('own')
+
+let Real: any
+
+export const setMenu = (v: any) => {
+	Real = v
+}
+
+export function Popup({ [mine]: own, ...props }: any) {
 	const bar = useContext(Bar)
 	const free = useContext(Free)
 	const p = bar && !free && !own ? props.children?.({})?.props : null
 	const button = p?.accessibilityLabel || p?.IconComponent
-	if (!button || p.keep || p.accessibilityActions) return jsx(Real, props)
-	return <Caught real={Real} props={props} jsx={jsx} p={p} />
+	if (!button || p.keep || p.accessibilityActions)
+		return createElement(Real, props)
+	return <Caught props={props} p={p} />
 }
 
-function Caught({ real: Real, props, jsx, p }: any) {
+function Caught({ props, p }: any) {
 	const handle = useRef<any>(null)
 	const [open] = useState(() => () => {
 		setTimeout(() => {
@@ -192,7 +201,7 @@ function Caught({ real: Real, props, jsx, p }: any) {
 	return (
 		<Free.Provider value>
 			<Stash hidden={!kept}>
-				{jsx(Real, {
+				{createElement(Real, {
 					...props,
 					children: (x: any) => {
 						handle.current = x
@@ -241,7 +250,7 @@ const pressable = (node: any): any => {
 
 const longPress = (node: any): boolean => {
 	if (Array.isArray(node)) return node.some(longPress)
-	if (!isValidElement(node)) return false
+	if (!isValidElement(node) || node.type === Popup) return false
 	const p = node.props as any
 	return !!p.triggerOnLongPress || longPress(p.children)
 }

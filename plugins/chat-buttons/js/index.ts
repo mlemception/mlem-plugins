@@ -1,6 +1,6 @@
 import { getModuleWithImportedPath } from '@valenced/discord/utils/modules/finders'
 import { after, HookPriority, instead } from '@valenced/patcher'
-import { insteadJSX } from '@valenced/react/jsx-runtime'
+import { afterJSX } from '@valenced/react/jsx-runtime'
 import { createElement } from 'react'
 import {
 	forced,
@@ -9,6 +9,7 @@ import {
 	Popup,
 	Row,
 	setButton,
+	setMenu,
 	skips,
 	swapRow,
 } from './bar'
@@ -68,9 +69,11 @@ export default plugin<{ jsonStorage: Options }>({
 				cleanup(after(mod.default, 'type', swapRow))
 			}),
 			getModuleWithImportedPath<any>(`${menu}/ContextMenu.native.tsx`, mod => {
+				setMenu(mod.ContextMenu)
 				cleanup(
-					insteadJSX(mod.ContextMenu, ([type, props, key], jsx: any) =>
-						jsx(Popup, { real: type, props, jsx }, key),
+					afterJSX(
+						mod.ContextMenu,
+						el => el && ({ ...el, type: Popup } as any),
 					),
 				)
 			}),
