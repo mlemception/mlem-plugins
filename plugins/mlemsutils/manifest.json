@@ -6,7 +6,7 @@
 	"author": "mlemception",
 	"contributors": ["nexpid <853550207039832084>"],
 	"icon": "StaffBadgeIcon",
-	"version": "1.6.8",
+	"version": "1.6.9",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

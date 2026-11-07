@@ -1,7 +1,56 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+	createContext,
+	useContext,
+	useEffect,
+	useMemo,
+	useReducer,
+	useRef,
+	useState,
+} from 'react'
+import type { ReactNode } from 'react'
 import { PanResponder, Pressable, View } from 'react-native'
-import { byProps, Reanimated } from '../../../lib/common'
+import { byProps, lerp, Reanimated } from '../../../lib/common'
 import { mdSysColor } from './M3Switch/styles'
+
+type Bar = { values: number[]; listeners: Set<() => void> }
+const BarContext = createContext<Bar | null>(null)
+
+export function M3MediaSlider({
+	component,
+	jsx,
+	...props
+}: {
+	component: any
+	jsx: (type: any, props: any) => ReactNode
+	[key: string]: any
+}) {
+	const bar = useMemo<Bar>(() => ({ values: [], listeners: new Set() }), [])
+	return (
+		<BarContext.Provider value={bar}>{jsx(component, props)}</BarContext.Provider>
+	)
+}
+
+const isClear = (color: unknown) => {
+	if (typeof color !== 'string') return false
+	const c = color.trim().toLowerCase()
+	if (c === 'transparent') return true
+	if (/^#[0-9a-f]{8}$/.test(c)) return c.endsWith('00')
+	if (/^#[0-9a-f]{4}$/.test(c)) return c.endsWith('0')
+	const rgba = c.match(/^rgba\(.*,\s*([\d.]+)\s*\)$/)
+	return !!rgba && Number(rgba[1]) === 0
+}
+
+function BarLayer({ bar, ratio }: { bar: Bar; ratio: number }) {
+	const index = useRef(-1)
+	if (index.current < 0) index.current = bar.values.length
+	bar.values[index.current] = ratio
+
+	useEffect(() => {
+		for (const listener of bar.listeners) listener()
+	}, [ratio])
+
+	return null
+}
 
 const height = 44
 const trackHeight = 16
@@ -15,7 +64,7 @@ const emphasizedDecelerate = () => Reanimated.Easing.bezier(0.05, 0.7, 0.1, 1)
 const clamp = (value: number, min: number, max: number) =>
 	Math.min(Math.max(value, min), max)
 
-export default function M3Slider(props: {
+type SliderProps = {
 	value?: number
 	minimumValue?: number
 	maximumValue?: number
@@ -24,14 +73,54 @@ export default function M3Slider(props: {
 	step?: number
 	inverted?: boolean
 	disabled?: boolean
+	thumbTintColor?: string
 	onValueChange?: (value: number) => void
 	onSlidingStart?: (value: number) => void
 	onSlidingComplete?: (value: number) => void
 	style?: any
-}) {
+}
+
+export default function M3Slider(props: SliderProps) {
+	const bar = useContext(BarContext)
+	const layer =
+		isClear(props.thumbTintColor) &&
+		!props.onValueChange &&
+		!props.onSlidingStart &&
+		!props.onSlidingComplete
+
+	if (bar && layer) {
+		const { value = 0, minimumValue = 0, maximumValue = 1 } = props
+		const ratio = clamp(
+			(value - minimumValue) / (maximumValue - minimumValue || 1),
+			0,
+			1,
+		)
+		return <BarLayer bar={bar} ratio={ratio} />
+	}
+
+	return <Slider {...props} bar={bar} bare={layer} />
+}
+
+function Slider(
+	props: SliderProps & { bar: Bar | null; bare: boolean },
+) {
 	byProps('useThemeContext').useThemeContext()
 
-	const { value = 0, minimumValue = 0, maximumValue = 1, disabled } = props
+	const { value = 0, minimumValue = 0, maximumValue = 1, disabled, bar, bare } =
+		props
+
+	const [, redraw] = useReducer(x => x + 1, 0)
+	useEffect(() => {
+		if (!bar) return
+		bar.listeners.add(redraw)
+		return () => {
+			bar.listeners.delete(redraw)
+		}
+	}, [bar])
+	const buffer =
+		bar && bar.values.length > 1 ? bar.values[bar.values.length - 1]! : 0
+
+	const hold = useRef<{ value: number; until: number } | null>(null)
 
 	const latest = useRef(props)
 	latest.current = props
@@ -49,8 +138,9 @@ export default function M3Slider(props: {
 		(props.inverted ? 1 - ratio : ratio) * Math.max(width - handleWidth, 0) +
 		handleWidth / 2
 
-	const activeWidth = Reanimated.useSharedValue(Math.max(x - gap - 2, 0))
-	const inactiveLeft = Reanimated.useSharedValue(x + gap + 2)
+	const space = bare ? 0 : gap + 2
+	const activeWidth = Reanimated.useSharedValue(Math.max(x - space, 0))
+	const inactiveLeft = Reanimated.useSharedValue(x + space)
 	const handleLeft = Reanimated.useSharedValue(x - handleWidth / 2)
 	const barWidth = Reanimated.useSharedValue(handleWidth)
 
@@ -64,13 +154,19 @@ export default function M3Slider(props: {
 					})
 		}
 
-		set(activeWidth, Math.max(x - gap - 2, 0))
-		set(inactiveLeft, x + gap + 2)
+		set(activeWidth, Math.max(x - space, 0))
+		set(inactiveLeft, x + space)
 		set(handleLeft, x - handleWidth / 2)
-	}, [x])
+	}, [x, space])
 
 	useEffect(() => {
 		if (dragging.current) return
+		const held = hold.current
+		if (held) {
+			const far = Math.abs(value - held.value) > range * 0.02
+			if (far && Date.now() < held.until) return
+			hold.current = null
+		}
 		currentRef.current = value
 		setCurrent(value)
 	}, [value])
@@ -124,6 +220,7 @@ export default function M3Slider(props: {
 			Math.abs(g.dx) > Math.abs(g.dy)
 		const finish = () => {
 			setPressed(false)
+			hold.current = { value: currentRef.current, until: Date.now() + 1500 }
 			latest.current.onSlidingComplete?.(currentRef.current)
 		}
 
@@ -145,6 +242,7 @@ export default function M3Slider(props: {
 	const seek = (at: number) => {
 		latest.current.onSlidingStart?.(currentRef.current)
 		update(snap(at))
+		hold.current = { value: currentRef.current, until: Date.now() + 1500 }
 		latest.current.onSlidingComplete?.(currentRef.current)
 	}
 
@@ -168,10 +266,6 @@ export default function M3Slider(props: {
 				{ height, justifyContent: 'center', opacity: disabled ? 0.38 : 1 },
 				props.style,
 			]}
-			onLayout={e => {
-				widthRef.current = e.nativeEvent.layout.width
-				setWidth(e.nativeEvent.layout.width)
-			}}
 			accessible
 			accessibilityRole="adjustable"
 			accessibilityState={{ disabled: !!disabled }}
@@ -186,7 +280,11 @@ export default function M3Slider(props: {
 			}
 		>
 			<Pressable
-				style={{ height }}
+				style={{ height, marginHorizontal: bar ? 14 : 0 }}
+				onLayout={e => {
+					widthRef.current = e.nativeEvent.layout.width
+					setWidth(e.nativeEvent.layout.width)
+				}}
 				disabled={disabled}
 				accessible={false}
 				onPress={e => seek(e.nativeEvent.locationX)}
@@ -229,6 +327,32 @@ export default function M3Slider(props: {
 					]}
 					key="inactive"
 				/>
+				{bar && buffer * width > x + space + 1 && (
+					<AnimatedView
+						pointerEvents="none"
+						style={[
+							{
+								position: 'absolute',
+								top: (height - trackHeight) / 2,
+								right: width - buffer * width,
+								height: trackHeight,
+								borderTopLeftRadius: 2,
+								borderBottomLeftRadius: 2,
+								borderTopRightRadius:
+									buffer * width >= width - 1 ? trackHeight / 2 : 2,
+								borderBottomRightRadius:
+									buffer * width >= width - 1 ? trackHeight / 2 : 2,
+								backgroundColor: lerp(
+									mdSysColor.primaryContainer(),
+									mdSysColor.primary(),
+									0.45,
+								),
+							},
+							{ left: inactiveLeft },
+						]}
+						key="buffer"
+					/>
+				)}
 				{width - x > trackHeight && (
 					<View
 						pointerEvents="none"
@@ -253,6 +377,7 @@ export default function M3Slider(props: {
 							width: handleWidth,
 							height,
 							alignItems: 'center',
+							opacity: bare ? 0 : 1,
 						},
 						{ left: handleLeft },
 					]}

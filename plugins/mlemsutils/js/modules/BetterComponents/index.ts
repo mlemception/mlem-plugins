@@ -4,6 +4,7 @@ import { FormSwitch } from '@valenced/discord/design'
 import { getModules } from '@valenced/modules/finders'
 import {
 	createFilterGenerator,
+	withName,
 	withProps,
 } from '@valenced/modules/finders/filters'
 import { after } from '@valenced/patcher'
@@ -14,7 +15,7 @@ import NerdEmoji from '../../../assets/MiniMod/NerdEmoji.png'
 import { byProps, showToast } from '../../lib/common'
 import { Module, ModuleCategory } from '../../stuff/Module'
 import { M3AlertButton, M3AlertModal } from './components/M3Dialog'
-import M3Slider from './components/M3Slider'
+import M3Slider, { M3MediaSlider } from './components/M3Slider'
 import M3Snackbar from './components/M3Snackbar'
 import M3Switch from './components/M3Switch'
 import SwitchHost, { setSwitchResolver } from './components/SwitchHost'
@@ -242,6 +243,17 @@ export default new Module({
 						(SliderComponent: any) => {
 							replace(SliderComponent, (props, _, jsx, key) =>
 								jsx(M3Slider, props, key),
+							)
+						},
+						{ max: 1 },
+					),
+				)
+				this.patches.add(
+					getModules(
+						withName<any>('MediaSlider'),
+						(MediaSlider: any) => {
+							replace(MediaSlider, (props, type, jsx, key) =>
+								jsx(M3MediaSlider, { ...props, component: type, jsx }, key),
 							)
 						},
 						{ max: 1 },
