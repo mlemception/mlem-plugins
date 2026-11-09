@@ -43,8 +43,17 @@ export function MathButton({
 	)
 }
 
-const isRight = (x: any) =>
-	isValidElement(x) && !!(x.props as any).children?.props?.onPressExpression
+const hasExpr = (x: any) =>
+	isValidElement(x) && !!(x.props as any).onPressExpression
+
+const isRight = (x: any) => {
+	if (!isValidElement(x)) return false
+	const c = (x.props as any).children
+	if (hasExpr(c)) return true
+	if (!isValidElement(c)) return false
+	const kids = (c.props as any).children
+	return Array.isArray(kids) ? kids.some(hasExpr) : hasExpr(kids)
+}
 
 export function addButton(node: ReactNode, button: ReactNode): ReactNode {
 	if (!isValidElement(node)) return node
