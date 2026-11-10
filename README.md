@@ -18,3 +18,7 @@ puts the chat bar buttons in one menu, like the + one. you can give them nicknam
 ## no compression
 
 sends images and videos as they are if they fit your upload limit, and stops avatars getting cropped to 256px. videos over the limit get squeezed down on your phone to just under it, keeping the full framerate, with an eta next to sending. uses [media3](https://github.com/androidx/media) (apache 2.0)
+
+## playback speed
+
+adds a speed button next to mute when watching a video, from 0.25x to 2x. you can set a default speed in its settings

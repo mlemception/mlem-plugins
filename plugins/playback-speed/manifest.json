@@ -1,0 +1,20 @@
+{
+	"format": 1,
+	"id": "mlemception.playbackspeed",
+	"name": "Playback Speed",
+	"description": "Adds a speed button to videos, with a default speed in settings.",
+	"author": "mlemception",
+	"icon": "SpeedometerIcon",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
