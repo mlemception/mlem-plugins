@@ -155,7 +155,7 @@ let lastGuild: string | null | undefined
 
 function onSelect(p: any) {
 	const o = opts()
-	if (!o.sidebar || p.guildId === lastGuild) return
+	if (p.guildId === lastGuild) return
 	const prev = lastGuild
 	lastGuild = p.guildId
 	const f = folderOf(p.guildId)
@@ -177,7 +177,7 @@ function onSelect(p: any) {
 function onToggle(p: any) {
 	if (S.ExpandedGuildFolderStore.isFolderExpanded(p.folderId)) touch(p.folderId)
 	const o = opts()
-	if (!o.sidebar || !o.oneOpen) return
+	if (!o.oneOpen) return
 	const exp = [...S.ExpandedGuildFolderStore.getExpandedFolders()]
 	if (exp.length < 2) return
 	const keep = recent.find(id => exp.includes(id)) ?? p.folderId

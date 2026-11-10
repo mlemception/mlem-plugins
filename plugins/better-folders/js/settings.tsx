@@ -94,35 +94,30 @@ function Page() {
 					<TableSwitchRow
 						label="One folder at a time"
 						subLabel="Opening a folder closes the others"
-						disabled={off}
 						value={s.oneOpen}
 						onValueChange={(oneOpen: boolean) => set({ oneOpen })}
 					/>
 					<TableSwitchRow
 						label="Close after picking a server"
 						subLabel="Close the folder when you pick a server from it"
-						disabled={off}
 						value={s.closeOnPick}
 						onValueChange={(closeOnPick: boolean) => set({ closeOnPick })}
 					/>
 					<TableSwitchRow
 						label="Close on other servers"
 						subLabel="Close folders when you pick a server that isn't in one"
-						disabled={off}
 						value={s.closeOutside}
 						onValueChange={(closeOutside: boolean) => set({ closeOutside })}
 					/>
 					<TableSwitchRow
 						label="Close on messages"
 						subLabel="Close folders when you go to your DMs"
-						disabled={off}
 						value={s.closeOnHome}
 						onValueChange={(closeOnHome: boolean) => set({ closeOnHome })}
 					/>
 					<TableSwitchRow
 						label="Follow the open server"
 						subLabel="Open a server's folder when you switch to it from somewhere else"
-						disabled={off}
 						value={s.followGuild}
 						onValueChange={(followGuild: boolean) => set({ followGuild })}
 					/>
