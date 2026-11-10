@@ -220,7 +220,11 @@ function GameSheet({ game }: { game: Game & Partial<App> }) {
 				<View style={{ gap: 10 }}>
 					<Label
 						text="Already played for"
-						hint="Backdates the start so your profile shows more time"
+						hint={
+							d.credit
+								? 'Only changes your profile, playtime counts from now'
+								: 'Backdates the start so your profile shows more time'
+						}
 					/>
 					<Choice
 						presets={PLAYED}
@@ -284,6 +288,16 @@ function GameSheet({ game }: { game: Game & Partial<App> }) {
 							it.
 						</Text>
 					)}
+					{d.credit && (minutes === 0 || (minutes ?? 0) > 480) && (
+						<Text
+							variant="text-xs/medium"
+							color="text-muted"
+							style={{ textAlign: 'center' }}
+						>
+							Playtime stops counting after 8h a day. Your profile keeps showing
+							the game.
+						</Text>
+					)}
 				</View>
 			</View>
 		</ActionSheet>
@@ -341,6 +355,13 @@ function ShuffleSheet() {
 					Picks games at random from everything Discord can detect and adds them
 					to the end of your queue.
 				</Text>
+				{d.credit && (
+					<Text variant="text-sm/medium" color="text-feedback-critical">
+						Playtime reporting is on. Lots of random games back to back is the
+						kind of thing that looks fake, so keep it short or turn reporting
+						off first.
+					</Text>
+				)}
 				<View style={{ gap: 10 }}>
 					<Label text="How many" />
 					<View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>

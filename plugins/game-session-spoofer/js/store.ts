@@ -29,6 +29,9 @@ export interface Stored {
 
 export interface Data {
 	credit: boolean
+	creditAck: boolean
+	creditDay: string
+	creditToday: number
 	showEnd: boolean
 	art: boolean
 	session: Stored | null
@@ -40,6 +43,9 @@ export interface Data {
 
 export const defaults: Data = {
 	credit: false,
+	creditAck: false,
+	creditDay: '',
+	creditToday: 0,
 	showEnd: false,
 	art: true,
 	session: null,

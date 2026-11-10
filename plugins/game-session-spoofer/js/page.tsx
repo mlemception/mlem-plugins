@@ -16,7 +16,7 @@ import {
 	useNow,
 	useToken,
 } from './common'
-import { HEARTBEAT_MS } from './credit'
+import { DAILY_CAP, HEARTBEAT_MS } from './credit'
 import { loaded, loadGames, search } from './games'
 import {
 	current,
@@ -30,6 +30,7 @@ import {
 	stopAll,
 	stopSession,
 	syncCredit,
+	usedToday,
 } from './session'
 import { openGame, openShuffle, queueOpen } from './sheet'
 import { data, save, useData } from './store'
@@ -50,7 +51,7 @@ function useGames() {
 	return { apps, error, retry: () => setN(x => x + 1) }
 }
 
-function confirm(title: string, body: string, yes: string, run: () => void) {
+function confirm(title: string, body: string, yes: string, run?: () => void) {
 	const { AlertModal, AlertActionButton } = Design as any
 	AlertActionCreators.openAlert(
 		'gss-confirm',
@@ -62,16 +63,32 @@ function confirm(title: string, body: string, yes: string, run: () => void) {
 				null,
 				createElement(AlertActionButton, {
 					text: yes,
-					variant: 'destructive',
+					variant: run ? 'destructive' : 'primary',
 					onPress: run,
 				}),
-				createElement(AlertActionButton, {
-					text: 'Cancel',
-					variant: 'secondary',
-				}),
+				run &&
+					createElement(AlertActionButton, {
+						text: 'Cancel',
+						variant: 'secondary',
+					}),
 			),
 		}),
 	)
+}
+
+const RISK = [
+	"This sends made-up game reports to Discord so the time counts on your profile and badges. Discord's rules ban faking activity, and the reports say you're on a PC while you're on your phone, so they're easy to spot if Discord ever checks. It could get your account warned, its badges taken away, or banned.",
+	"To keep it lower, playtime only counts from when you turn this on, nothing is sent for time Discord was closed, and it stops at 8h a day. Don't use it on an account you care about.",
+	'Just showing a game on your profile with this off is the same thing custom status apps do and is a lot safer.',
+].join('\n\n')
+
+function setCredit(on: boolean) {
+	const go = () => {
+		save({ credit: on, ...(on && { creditAck: true }) })
+		syncCredit()
+	}
+	if (on) confirm('Send fake playtime?', RISK, 'Turn on anyway', go)
+	else go()
 }
 
 const SHOWN: Record<string, [string, string] | undefined> = {
@@ -181,11 +198,13 @@ function NowPlaying() {
 					variant="text-xs/medium"
 					color={status.error ? 'text-feedback-critical' : 'text-muted'}
 				>
-					{status.error
-						? `Playtime not sent: ${status.error}. Retrying in a few minutes.`
-						: s.credit?.launched
-							? `${cap(fmt(s.credit.creditedUntil - s.start))} of playtime sent${status.sent ? `, next update in ${fmt(status.sent + HEARTBEAT_MS - now)}` : ''}`
-							: 'Sending playtime to Discord...'}
+					{status.capped
+						? `Hit today's ${fmt(DAILY_CAP)} playtime limit, the rest won't be sent`
+						: status.error
+							? `Playtime not sent: ${status.error}. Retrying in a few minutes.`
+							: s.credit?.launched
+								? `${cap(fmt(s.credit.creditedUntil - s.start))} of playtime sent${status.sent ? `, next update in ${fmt(status.sent + HEARTBEAT_MS - now)}` : ''}`
+								: 'Sending playtime to Discord...'}
 				</Text>
 			)}
 
@@ -470,18 +489,21 @@ function Options() {
 			<TableRowGroup title="Playtime">
 				<TableSwitchRow
 					label="Count toward playtime badges"
-					subLabel="Reports the session to Discord every 5 minutes, like a real game would. Badges only move once Discord runs its daily update"
+					subLabel="Reports the session to Discord every 5 minutes like a real game. Risky, this can get your account banned"
 					icon={<TableRowAssetIcon name="TrophyIcon" />}
 					value={d.credit}
-					onValueChange={(credit: boolean) => {
-						save({ credit })
-						syncCredit()
-					}}
+					onValueChange={setCredit}
+				/>
+				<TableRow
+					label="What's the risk?"
+					icon={<TableRowAssetIcon name="WarningIcon" />}
+					arrow
+					onPress={() => confirm('About playtime', RISK, 'Got it')}
 				/>
 				{d.creditedMs > 0 && (
 					<TableRow
 						label="Sent so far"
-						subLabel="Everything this plugin has reported"
+						subLabel={`${fmt(usedToday())} today, stops at ${fmt(DAILY_CAP)} a day`}
 						icon={<TableRowAssetIcon name="ClockIcon" />}
 						trailing={<TableRowTrailingText text={fmt(d.creditedMs)} />}
 					/>

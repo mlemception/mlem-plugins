@@ -5,6 +5,8 @@ import { api } from './games'
 import type { Credit, Game } from './store'
 
 export const HEARTBEAT_MS = 5 * 60_000
+export const MAX_GAP = 15 * 60_000
+export const DAILY_CAP = 8 * 60 * 60_000
 const TOKEN_AGE = 12 * 60 * 60_000
 const PER_REQUEST = 100
 
@@ -162,6 +164,10 @@ async function post(body: any) {
 
 async function send(g: Game, c: Credit, until: number, final: boolean) {
 	if (c.finished) return 0
+	if (!c.launched && final && until <= c.creditedUntil) {
+		c.finished = true
+		return 0
+	}
 	const end = Math.max(until, c.creditedUntil)
 	const events: any[] = []
 	let at = c.creditedUntil

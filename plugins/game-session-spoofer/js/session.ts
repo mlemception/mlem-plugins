@@ -1,10 +1,10 @@
 import { Dispatcher } from '@valenced/discord/common/flux'
 import { Stores } from '@valenced/discord/flux'
 import { AppState } from 'react-native'
-import { HEARTBEAT_MS, newCredit, report } from './credit'
+import { DAILY_CAP, HEARTBEAT_MS, MAX_GAP, newCredit, report } from './credit'
 import { activityImage, fetchIcon } from './games'
 import { bump, data, remember, save } from './store'
-import type { Credit, Game, Queued, Stored } from './store'
+import type { Credit, Game, Stored } from './store'
 
 const SOCKET = 'mlem-game-session'
 const PID = 31337
@@ -14,7 +14,7 @@ let endTimer: any
 let beatTimer: any
 let gen = 0
 
-export const status: { sent?: number; error?: string } = {}
+export const status: { sent?: number; error?: string; capped?: boolean } = {}
 
 export const current = () => cur
 
@@ -61,8 +61,20 @@ function persist() {
 const limit = (s: Stored, at = Date.now()) =>
 	s.endsAt ? Math.min(at, s.endsAt) : at
 
+const today = () => new Date().toDateString()
+
+export const usedToday = () => {
+	const d = data()
+	return d.creditDay === today() ? d.creditToday : 0
+}
+
 function credited(ms: number) {
-	if (ms > 0) save({ creditedMs: data().creditedMs + ms })
+	if (ms > 0)
+		save({
+			creditedMs: data().creditedMs + ms,
+			creditDay: today(),
+			creditToday: usedToday() + ms,
+		})
 	status.sent = Date.now()
 	status.error = undefined
 	bump()
@@ -79,20 +91,34 @@ function failed(e: any) {
 function finish(s: Stored, until = limit(s)) {
 	const c = s.credit
 	if (!c || c.finished) return Promise.resolve()
-	return report(s.game, c, until, true).then(credited, failed)
+	const room = Math.max(0, DAILY_CAP - usedToday())
+	const end = Math.min(until, c.creditedUntil + Math.min(room, MAX_GAP))
+	return report(s.game, c, end, true).then(credited, failed)
 }
 
 export function syncCredit() {
 	const s = cur
 	if (!s) return
-	if (!data().credit) {
+	const room = DAILY_CAP - usedToday()
+	const was = status.capped
+	status.capped = data().credit && room <= 0
+	if (was !== status.capped) bump()
+	if (!data().credit || room <= 0) {
 		if (s.credit && !s.credit.finished)
 			finish(s).then(() => cur === s && persist())
 		return
 	}
-	if (!s.credit || s.credit.finished)
-		s.credit = newCredit(s.credit?.creditedUntil ?? s.start)
-	report(s.game, s.credit, limit(s))
+	const now = limit(s)
+	if (
+		s.credit &&
+		!s.credit.finished &&
+		now - s.credit.creditedUntil > MAX_GAP
+	) {
+		finish(s, s.credit.creditedUntil)
+		s.credit = undefined
+	}
+	if (!s.credit || s.credit.finished) s.credit = newCredit(now)
+	report(s.game, s.credit, Math.min(now, s.credit.creditedUntil + room))
 		.then(credited, failed)
 		.then(() => cur === s && persist())
 }
@@ -172,17 +198,6 @@ export function stopAll() {
 	stopSession()
 }
 
-function catchUp(q: Queued, from: number, to: number) {
-	if (!data().credit) return
-	const s: Stored = {
-		game: q,
-		start: from,
-		endsAt: to,
-		credit: newCredit(from),
-	}
-	finish(s, to)
-}
-
 export function advance(from: number) {
 	const prev = cur
 	if (prev) {
@@ -200,7 +215,6 @@ export function advance(from: number) {
 			begin(next, at, endsAt)
 			return next
 		}
-		catchUp(next, at, endsAt)
 		at = endsAt
 	}
 	save({ queue: [] })
@@ -255,6 +269,7 @@ export function shown() {
 }
 
 export function init() {
+	if (data().credit && !data().creditAck) save({ credit: false })
 	const s = data().session
 	if (s?.game?.id) {
 		const restored: Stored = {
