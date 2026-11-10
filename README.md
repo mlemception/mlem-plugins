@@ -22,3 +22,7 @@ sends images and videos as they are if they fit your upload limit, and stops ava
 ## playback speed
 
 adds a speed button next to mute when watching a video, from 0.25x to 2x. you can set a default speed in its settings
+
+## message latency
+
+shows how late a message arrived next to it, like "(3s late)", when it took longer than a few seconds to send. yellow when it's slow, red when it's really slow. also spots people on the old discord android app. based on [MessageLatency](https://github.com/Vendicated/Vencord/tree/main/src/plugins/messageLatency) by arHSM
