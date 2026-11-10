@@ -34,3 +34,7 @@ puts any image or gif behind your youbar instead of your nameplate, or hides the
 ## hide welcome messages
 
 hides the "x is here." messages when someone joins a server. can also hide the wave sticker replies to them and just show how many got hidden, in its settings
+
+## better folders
+
+opens server folders in their own column next to your server list, and the channel list slides over to make room the same way discord slides its panels. hold a server or the folder in it for the usual menu, swipe left on it to close. can also keep one folder open at a time, close folders when you pick a server, show folder icons in the server list and more in its settings. based on [BetterFolders](https://github.com/Vendicated/Vencord/tree/main/src/plugins/betterFolders) by juby, AutumnVN and Nuckyz
