@@ -1,0 +1,19 @@
+{
+	"format": 1,
+	"id": "mlemception.mlembar",
+	"name": "mlembar",
+	"description": "Put any image behind your YouBar, or hide your nameplate.",
+	"author": "mlemception",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
