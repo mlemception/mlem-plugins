@@ -30,3 +30,7 @@ puts little signal bars next to someone's name when their message took a while t
 ## mlembar
 
 puts any image or gif behind your youbar instead of your nameplate, or hides the nameplate. paste a link in its settings. based on BetterYouBar by j from [rain](https://codeberg.org/raincord/rain)
+
+## hide welcome messages
+
+hides the "x is here." messages when someone joins a server. can also hide the wave sticker replies to them and just show how many got hidden, in its settings

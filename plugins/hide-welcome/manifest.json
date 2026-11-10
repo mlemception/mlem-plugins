@@ -1,0 +1,19 @@
+{
+	"format": 1,
+	"id": "mlemception.hidewelcome",
+	"name": "Hide Welcome Messages",
+	"description": "Hides server join messages and the wave sticker replies to them.",
+	"author": "mlemception",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
