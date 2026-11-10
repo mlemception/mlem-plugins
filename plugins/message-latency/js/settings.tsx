@@ -36,6 +36,12 @@ export function Settings({
 			</TableRowGroup>
 			<TableRowGroup>
 				<TableSwitchRow
+					label="Always show indicator"
+					subLabel="Green bars on messages under the threshold, tap to see the delay"
+					value={s.alwaysShow}
+					onValueChange={(v: boolean) => jsonStorage.set({ alwaysShow: v })}
+				/>
+				<TableSwitchRow
 					label="Detect old Discord Android clients"
 					value={s.detectDiscordKotlin}
 					onValueChange={(v: boolean) =>

@@ -25,7 +25,7 @@ adds a speed button next to mute when watching a video, from 0.25x to 2x. the de
 
 ## message latency
 
-puts little signal bars next to someone's name when their message took a while to send. tap them to see how late it was. yellow when it's slow, red when it's really slow, green for people on the old discord android app. based on [MessageLatency](https://github.com/Vendicated/Vencord/tree/main/src/plugins/messageLatency) by arHSM
+puts little signal bars next to someone's name when their message took a while to send. tap them to see how late it was. yellow when it's slow, red when it's really slow, green for people on the old discord android app. you can turn on always show to get green bars on every message too. based on [MessageLatency](https://github.com/Vendicated/Vencord/tree/main/src/plugins/messageLatency) by arHSM
 
 ## mlembar
 

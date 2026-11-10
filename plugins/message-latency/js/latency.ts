@@ -6,6 +6,7 @@ export interface Options {
 	detectDiscordKotlin: boolean
 	showMillis: boolean
 	ignoreSelf: boolean
+	alwaysShow: boolean
 }
 
 export const defaults: Options = {
@@ -13,6 +14,7 @@ export const defaults: Options = {
 	detectDiscordKotlin: true,
 	showMillis: false,
 	ignoreSelf: false,
+	alwaysShow: false,
 }
 
 type FillValue =
@@ -83,25 +85,35 @@ export function latencyData(message: any, s: Options) {
 		isDiscordKotlin = s.detectDiscordKotlin
 		delta += DISCORD_KT_DELAY
 	}
+	const raw = Math.abs(delta)
 	if (!s.showMillis) delta = Math.round(delta / 1000) * 1000
 
 	const abs = Math.abs(delta)
 	const ahead = abs !== delta
 	const latencyMillis = s.latency * 1000
 
-	const text = abs >= latencyMillis ? stringDelta(abs, s.showMillis) : null
+	const late = abs >= latencyMillis
+	const text = late
+		? stringDelta(abs, s.showMillis)
+		: s.alwaysShow
+			? raw < 1000
+				? stringDelta(raw, true)
+				: stringDelta(abs, s.showMillis)
+			: null
 
 	const TROLL_LIMIT = 2 * 60 * 1000
 
 	const fill: Fill = isDiscordKotlin
 		? ['STATUS_POSITIVE', 'STATUS_POSITIVE', 'TEXT_MUTED']
-		: delta >= TROLL_LIMIT || ahead
-			? ['TEXT_MUTED', 'TEXT_MUTED', 'TEXT_MUTED']
-			: delta >= latencyMillis * 2
-				? ['STATUS_DANGER', 'TEXT_MUTED', 'TEXT_MUTED']
-				: ['STATUS_WARNING', 'STATUS_WARNING', 'TEXT_MUTED']
+		: !late
+			? ['STATUS_POSITIVE', 'STATUS_POSITIVE', 'STATUS_POSITIVE']
+			: delta >= TROLL_LIMIT || ahead
+				? ['TEXT_MUTED', 'TEXT_MUTED', 'TEXT_MUTED']
+				: delta >= latencyMillis * 2
+					? ['STATUS_DANGER', 'TEXT_MUTED', 'TEXT_MUTED']
+					: ['STATUS_WARNING', 'STATUS_WARNING', 'TEXT_MUTED']
 
-	return abs >= latencyMillis || isDiscordKotlin
+	return late || isDiscordKotlin || s.alwaysShow
 		? { delta: text, ahead, fill, isDiscordKotlin }
 		: null
 }
