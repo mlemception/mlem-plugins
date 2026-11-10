@@ -29,7 +29,7 @@ puts little signal bars next to someone's name when their message took a while t
 
 ## mlembar
 
-puts any image or gif behind your youbar instead of your nameplate, or hides the nameplate. paste a link in its settings. based on BetterYouBar by j from [rain](https://codeberg.org/raincord/rain)
+puts any image or gif behind your youbar instead of your nameplate, or hides the nameplate. paste a link in its settings or upload a pic from your phone, it goes to catbox. based on BetterYouBar by j from [rain](https://codeberg.org/raincord/rain)
 
 ## hide welcome messages
 

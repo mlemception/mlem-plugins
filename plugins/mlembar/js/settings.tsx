@@ -2,6 +2,7 @@ import { Design } from '@valenced/discord/design'
 import { useState } from 'react'
 import { Image, ScrollView, View } from 'react-native'
 import { setStorage, storage, useOptions } from './store'
+import { uploadImage } from './upload'
 import type { PluginApi } from '@valenced/plugins/types'
 import type { Mode, Options } from './store'
 
@@ -18,6 +19,7 @@ export function Settings({
 
 function Page() {
 	const {
+		Button,
 		Stack,
 		TableRadioGroup,
 		TableRadioRow,
@@ -27,7 +29,13 @@ function Page() {
 	} = Design as any
 	const s = useOptions()
 	const [url, setUrl] = useState(s.url)
+	const [busy, setBusy] = useState(false)
 	const shown = url.trim()
+
+	const change = (v: string) => {
+		setUrl(v)
+		storage.set({ url: v })
+	}
 
 	return (
 		<ScrollView
@@ -65,9 +73,17 @@ function Page() {
 							value={url}
 							autoCapitalize="none"
 							autoCorrect={false}
-							onChange={(v: string) => {
-								setUrl(v)
-								storage.set({ url: v })
+							onChange={change}
+						/>
+						<Button
+							variant="secondary"
+							text={busy ? 'Uploading...' : 'Upload from device'}
+							loading={busy}
+							disabled={busy}
+							onPress={async () => {
+								const link = await uploadImage(() => setBusy(true))
+								setBusy(false)
+								if (link) change(link)
 							}}
 						/>
 						{!!shown && (
