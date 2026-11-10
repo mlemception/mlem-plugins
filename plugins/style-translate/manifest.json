@@ -1,0 +1,20 @@
+{
+	"format": 1,
+	"id": "mlemception.styletranslate",
+	"name": "Style Translate",
+	"description": "Rewrite your messages as a pirate, Shakespeare, uwu and a lot more.",
+	"author": "mlemception",
+	"icon": "PencilSparkleIcon",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}

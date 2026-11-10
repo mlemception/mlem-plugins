@@ -42,3 +42,7 @@ opens server folders in their own column next to your server list, and the chann
 ## catbox upload
 
 attach stuff like normal. if something is over your upload limit it goes up to catbox when you hit send, and the message waits in a little card until it is done, then posts with the link. reply stays on whoever you replied to. the link can be pasted as is, hidden so only the preview shows, or as a tiny dot. litterbox works too if you want links that expire
+
+## style translate
+
+rewrites your messages as a pirate, shakespeare, yoda, uwu and a bunch more before they send. tap the button in the chat bar to pick one and see how it comes out, or keep one on for a chat. you can search anythingtranslate for more styles or describe your own and have ai write it. based on [StyleTranslate](https://github.com/Myarcer/vencord-styletranslate) by Nyarc
