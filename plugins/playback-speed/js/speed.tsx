@@ -2,6 +2,7 @@ import { ActionSheetActionCreators } from '@valenced/discord/actions'
 import { Design } from '@valenced/discord/design'
 import { lookupModule } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
+import { callNativeMethod } from '@valenced/modules/native'
 import { useRef, useSyncExternalStore } from 'react'
 import { View } from 'react-native'
 
@@ -24,12 +25,8 @@ export const label = (value: number) => `${+value.toFixed(2)}x`
 
 export let fallback = 1
 
-export function setFallback(value: number) {
-	fallback = stops.includes(value) ? value : 1
-}
-
 let rate = 1
-let open = 0
+let open = false
 const subs = new Set<() => void>()
 const ping = () => {
 	for (const sub of subs) sub()
@@ -41,24 +38,36 @@ const listen = (sub: () => void) => {
 	}
 }
 
+const call = callNativeMethod as (name: string, args: unknown[]) => Promise<any>
+
+const push = (value: number) => {
+	call('mlemspeed.rate', [value]).catch(() => {})
+}
+
+export function setFallback(value: number) {
+	fallback = stops.includes(value) ? value : 1
+	if (!open) speed.set(fallback)
+}
+
 export const speed = {
 	get: () => rate,
 	set(value: number) {
 		rate = value
+		push(value)
 		ping()
 	},
 	enter() {
-		if (open++ === 0) rate = fallback
-		ping()
-		return () => {
-			open--
-			ping()
-		}
+		open = true
+		speed.set(fallback)
+	},
+	leave() {
+		open = false
+		speed.set(fallback)
 	},
 }
 
 export const useRate = () => useSyncExternalStore(listen, () => rate)
-export const useOpen = () => useSyncExternalStore(listen, () => open > 0)
+export const useOpen = () => useSyncExternalStore(listen, () => open)
 
 export function Picker({
 	value,

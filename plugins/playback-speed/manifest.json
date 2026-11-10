@@ -5,7 +5,7 @@
 	"description": "Adds a speed button to videos, with a default speed in settings.",
 	"author": "mlemception",
 	"icon": "SpeedometerIcon",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
@@ -15,6 +15,10 @@
 		}
 	},
 	"dist": {
-		"script": "index.js"
+		"script": "index.js",
+		"android": {
+			"path": "loader.jar",
+			"class": "mlem.speed.Loader"
+		}
 	}
 }

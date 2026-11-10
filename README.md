@@ -21,7 +21,7 @@ sends images and videos as they are if they fit your upload limit, and stops ava
 
 ## playback speed
 
-adds a speed button next to mute when watching a video, from 0.25x to 2x. you can set a default speed in its settings
+adds a speed button next to mute when watching a video, from 0.25x to 2x. the default speed in its settings also goes for videos playing in chat
 
 ## message latency
 

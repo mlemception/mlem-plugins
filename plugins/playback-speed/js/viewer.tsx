@@ -2,14 +2,9 @@ import { getAssetIdByName } from '@valenced/assets'
 import { getModuleWithImportedPath } from '@valenced/discord/utils/modules/finders'
 import { getModules } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
+import { before } from '@valenced/patcher'
 import { afterJSX } from '@valenced/react/jsx-runtime'
-import {
-	cloneElement,
-	createContext,
-	createElement,
-	useContext,
-	useEffect,
-} from 'react'
+import { cloneElement, createContext, createElement, useContext } from 'react'
 import { useWindowDimensions, View } from 'react-native'
 import { openSheet, speed, useOpen, useRate } from './speed'
 
@@ -18,11 +13,6 @@ const Viewer = createContext(false)
 function Rated({ real, ...props }: any) {
 	const inside = useContext(Viewer)
 	const rate = useRate()
-
-	useEffect(() => {
-		if (inside) return speed.enter()
-	}, [inside])
-
 	return createElement(real, inside ? { ...props, rate } : props)
 }
 
@@ -72,6 +62,32 @@ export function watchViewer(cleanup: (...items: any[]) => void) {
 							? createElement(Viewer.Provider, { value: true, key: el.key }, el)
 							: el,
 					),
+				)
+			},
+		),
+		getModuleWithImportedPath<any>(
+			'modules/media_viewer/native/components/openMediaModal.tsx',
+			mod => {
+				cleanup(
+					before(mod, 'openMediaModal', args => {
+						const opts = args[0]
+						const video = opts?.initialSources?.some(
+							(s: any) => s.videoURI || s.contentType?.startsWith('video/'),
+						)
+						if (!video) return args
+						speed.enter()
+						const close = opts.onClose
+						let done = false
+						args[0] = {
+							...opts,
+							onClose: (...rest: any[]) => {
+								if (!done) speed.leave()
+								done = true
+								return close?.(...rest)
+							},
+						}
+						return args
+					}),
 				)
 			},
 		),
