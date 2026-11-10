@@ -468,7 +468,7 @@ function useFolderState(id: number) {
 	return { unread: !!u, high: h, low: l, selected: !!sel }
 }
 
-export function RailFolder({ as, folderId, ...p }: any) {
+export function RailFolder({ as, folderId, native, ...p }: any) {
 	const st = useFolderState(folderId)
 	const mentions = st.high + st.low
 	const b =
@@ -476,6 +476,7 @@ export function RailFolder({ as, folderId, ...p }: any) {
 			mentionCount: mentions,
 			isMentionLowImportance: st.high === 0 && st.low > 0,
 		}) ?? {}
+	if (native) return createElement(as, p)
 	return createElement(as, {
 		...p,
 		selected: st.selected,

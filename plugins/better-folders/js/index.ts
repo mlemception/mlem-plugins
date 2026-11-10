@@ -73,10 +73,16 @@ export default plugin<{ jsonStorage: Options }>({
 				cleanup(
 					beforeJSX(mod.default, args => {
 						const p = args[1] as any
+						if (!p || p.isDragPreview) return args
 						const o = opts()
-						if (!p || !o.sidebar || p.isDragPreview) return args
-						if (!isShown(p.id) && o.rail !== 'folder') return args
-						return [args[0], { ...p, expanded: true }, args[2]] as any
+						const open = o.sidebar && isShown(p.id)
+						const icon = o.rail === 'folder' && !p.expanded
+						if (!open && !icon) return args
+						return [
+							args[0],
+							{ ...p, expanded: true, bfLook: open ? 'open' : 'icon' },
+							args[2],
+						] as any
 					}),
 				)
 			}),
@@ -84,7 +90,8 @@ export default plugin<{ jsonStorage: Options }>({
 				cleanup(
 					beforeJSX(mod.default, args => {
 						const p = args[1] as any
-						if (!p || !opts().sidebar || p.isDragPreview) return args
+						if (!p || p.isDragPreview) return args
+						const o = opts()
 						if (ui.side)
 							return [
 								args[0],
@@ -96,6 +103,20 @@ export default plugin<{ jsonStorage: Options }>({
 						const folder = p.expanded
 							? S.SortedGuildStore.getGuildFolderById?.(Number(id))
 							: undefined
+						if (!o.sidebar) {
+							if (!folder || o.rail !== 'folder') return args
+							if (S.ExpandedGuildFolderStore.isFolderExpanded(folder.folderId))
+								return [
+									RailFolder,
+									{
+										...p,
+										as: args[0],
+										folderId: folder.folderId,
+										native: true,
+									},
+									args[2],
+								] as any
+						}
 						const ext = folder
 							? createElement(ui.FolderBG, {
 									color: folder.folderColor ?? undefined,
@@ -105,12 +126,14 @@ export default plugin<{ jsonStorage: Options }>({
 							: p.externalChildren
 						const q = {
 							...p,
-							externalChildren: createElement(
-								Fragment,
-								null,
-								ext,
-								createElement(Probe, { id }),
-							),
+							externalChildren: o.sidebar
+								? createElement(
+										Fragment,
+										null,
+										ext,
+										createElement(Probe, { id }),
+									)
+								: ext,
 						}
 						if (!folder) return [args[0], q, args[2]] as any
 						if (isShown(folder.folderId))
