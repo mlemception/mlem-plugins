@@ -46,3 +46,7 @@ attach stuff like normal. if something is over your upload limit it goes up to c
 ## style translate
 
 rewrites your messages as a pirate, shakespeare, yoda, uwu and a bunch more before they send. tap the button in the chat bar to pick one and see how it comes out, or keep one on for a chat. you can search anythingtranslate for more styles or describe your own and have ai write it. based on [StyleTranslate](https://github.com/Myarcer/vencord-styletranslate) by Nyarc
+
+## game session spoofer
+
+shows you as playing any game discord can detect, for however long you want, without it running. you can say you already played for a while, line up a queue of games or throw random ones in. can also send the time to discord like a real game would so it counts toward the playtime badges, off by default. it's under valenced in settings. based on [gameSessionSpoofer](https://github.com/Accentaro/gameSessionSpoofer) by benjii

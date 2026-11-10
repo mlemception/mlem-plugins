@@ -1,0 +1,20 @@
+{
+	"format": 1,
+	"id": "mlemception.gamesessionspoofer",
+	"name": "Game Session Spoofer",
+	"description": "Show up as playing any game Discord knows, for as long as you want, and line up more after it.",
+	"author": "mlemception",
+	"icon": "GameControllerIcon",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}
