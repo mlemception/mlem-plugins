@@ -19,7 +19,7 @@ export function Settings({
 		<ScrollView
 			contentContainerStyle={{ padding: 16, paddingBottom: 64, gap: 16 }}
 		>
-			<TableRowGroup title="Threshold in seconds">
+			<TableRowGroup title="Threshold in seconds for latency indicator">
 				<View style={{ padding: 12 }}>
 					<TextInput
 						value={text ?? String(s.latency)}
@@ -36,21 +36,21 @@ export function Settings({
 			</TableRowGroup>
 			<TableRowGroup>
 				<TableSwitchRow
-					label="Show milliseconds"
-					value={s.millis}
-					onValueChange={(v: boolean) => jsonStorage.set({ millis: v })}
+					label="Detect old Discord Android clients"
+					value={s.detectDiscordKotlin}
+					onValueChange={(v: boolean) =>
+						jsonStorage.set({ detectDiscordKotlin: v })
+					}
 				/>
 				<TableSwitchRow
-					label="Ignore my messages"
-					subLabel="Don't mark your own messages"
+					label="Show milliseconds"
+					value={s.showMillis}
+					onValueChange={(v: boolean) => jsonStorage.set({ showMillis: v })}
+				/>
+				<TableSwitchRow
+					label="Don't add indicator to your own messages"
 					value={s.ignoreSelf}
 					onValueChange={(v: boolean) => jsonStorage.set({ ignoreSelf: v })}
-				/>
-				<TableSwitchRow
-					label="Detect old Discord Android"
-					subLabel="The old app sends messages with a 17 day offset"
-					value={s.kotlin}
-					onValueChange={(v: boolean) => jsonStorage.set({ kotlin: v })}
 				/>
 			</TableRowGroup>
 		</ScrollView>

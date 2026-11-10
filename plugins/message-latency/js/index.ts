@@ -1,6 +1,7 @@
 import { getModuleWithImportedPath } from '@valenced/discord/utils/modules/finders'
 import { after } from '@valenced/patcher'
-import { check, defaults } from './latency'
+import { barsIcon } from './icon'
+import { colorsFor, defaults, latencyData, tooltip } from './latency'
 import { Settings } from './settings'
 import type { Options } from './latency'
 
@@ -21,7 +22,15 @@ export default plugin<{ jsonStorage: Options }>({
 					cleanup(
 						after(mod.default.prototype, 'generate', (row: any) => {
 							try {
-								if (row?.message) check(row.message, s)
+								const m = row?.message
+								const d = m && latencyData(m, s)
+								if (d)
+									m.roleIcon = {
+										source: barsIcon(colorsFor(d.fill)),
+										name: tooltip(d),
+										alt: d.delta ?? 'Old Discord Android client',
+										size: 16,
+									}
 							} catch {}
 							return row
 						}),
