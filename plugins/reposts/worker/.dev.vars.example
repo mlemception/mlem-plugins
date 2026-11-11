@@ -1,0 +1,5 @@
+DISCORD_CLIENT_ID=0
+DISCORD_CLIENT_SECRET=dev
+SESSION_KEY=dev-only-session-key-0123456789abcdef
+PUBLIC_URL=http://localhost:8799
+DEV_LOGIN=yes

@@ -54,3 +54,7 @@ shows you as playing any game discord can detect, for however long you want, wit
 ## chat heads
 
 messenger style chat heads. when someone messages you while discord is in the background their pfp pops up as a bubble over whatever you're doing. tap it to read the messages and reply right there, hold it to jump into the chat. drag it around or throw it on the x to get rid of it. replies go through discord's own notification reply so they work like replying from the notification. needs display over other apps, there's a button for it in its settings
+
+## reposts
+
+hold a message to repost it to a tab on your profile, or repost it anonymously. people with the plugin see your reposts and whether they match the original message. runs on its own small cloudflare worker, setup is in plugins/reposts

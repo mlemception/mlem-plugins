@@ -1,0 +1,16 @@
+{
+	"name": "reposts-worker",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "wrangler dev --local --port 8799",
+		"deploy": "wrangler deploy",
+		"check": "tsc --noEmit",
+		"test": "bun test test"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "5.20261110.1",
+		"typescript": "^5.9.3",
+		"wrangler": "4.160.0"
+	}
+}

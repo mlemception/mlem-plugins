@@ -1,0 +1,18 @@
+{
+	"name": "reposts",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-11-01",
+	"workers_dev": false,
+	"routes": [{ "pattern": "reposts.mlem.my", "custom_domain": true }],
+	"kv_namespaces": [{ "binding": "KV", "id": "374af4b55d4842b7ae4605aa32433fe5" }],
+	"ratelimits": [
+		{ "name": "RL_READ", "namespace_id": "4101", "simple": { "limit": 120, "period": 60 } },
+		{ "name": "RL_WRITE", "namespace_id": "4102", "simple": { "limit": 20, "period": 60 } },
+		{ "name": "RL_AUTH", "namespace_id": "4103", "simple": { "limit": 30, "period": 60 } }
+	],
+	"vars": {
+		"PUBLIC_URL": "https://reposts.mlem.my",
+		"INDEX_SEED": "2725269944"
+	},
+	"observability": { "enabled": true }
+}
