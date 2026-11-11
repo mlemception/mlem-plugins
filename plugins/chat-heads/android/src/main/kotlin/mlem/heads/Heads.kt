@@ -460,7 +460,7 @@ class Heads(private val app: Context, private val storage: File) : Application.A
         val scrim = View(app).apply {
             setBackgroundColor(0x99000000.toInt())
             alpha = 0f
-            setOnClickListener { collapse() }
+            setOnClickListener { collapse(animate = true) }
         }
         root.addView(scrim, FrameLayout.LayoutParams(-1, -1))
         wm.addView(root, params(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, true).apply {
@@ -475,7 +475,7 @@ class Heads(private val app: Context, private val storage: File) : Application.A
         val order = heads.reversed()
         val stepX = size - app.dp(6f).toInt()
         val top = s.top + app.dp(8f).toInt()
-        for ((i, h) in order.withIndex()) {
+        for ((i, h) in order.withIndex().reversed()) {
             (h.view.parent as? ViewGroup)?.removeView(h.view)
             val cell = LinearLayout(app).apply {
                 orientation = LinearLayout.VERTICAL
@@ -489,6 +489,7 @@ class Heads(private val app: Context, private val storage: File) : Application.A
             h.view.chrome = true
             cell.setOnClickListener { open(h) }
             val x = s.right - size - i * stepX + sample.pad.toInt() - app.dp(4f).toInt()
+            cell.tag = i
             root.addView(cell, FrameLayout.LayoutParams(size, -2))
             cell.translationX = from.first.toFloat()
             cell.translationY = (from.second - screen().top).toFloat()
@@ -510,12 +511,31 @@ class Heads(private val app: Context, private val storage: File) : Application.A
         setPadding(app.dp(2f).toInt(), 0, app.dp(2f).toInt(), 0)
     }
 
-    private fun collapse() {
+    private fun collapse(animate: Boolean = false) {
         val root = fan ?: return
         fan = null
-        for (h in heads) (h.view.parent as? ViewGroup)?.removeView(h.view)
-        runCatching { wm.removeView(root) }
-        sync()
+        val done = {
+            runCatching { wm.removeView(root) }
+            for (h in heads) if (h.view.parent?.parent === root) (h.view.parent as ViewGroup).removeView(h.view)
+            sync()
+        }
+        if (!animate || !root.isAttachedToWindow || root.childCount < 2) {
+            done()
+            return
+        }
+        if (anchorY < 0) anchorY = (screen().height() * 0.28f).toInt()
+        val toX = edgeX(left).toFloat()
+        val toY = (clampY(anchorY) - screen().top).toFloat()
+        root.getChildAt(0).animate().alpha(0f).setDuration(200).start()
+        for (i in 1 until root.childCount) {
+            val cell = root.getChildAt(i) as ViewGroup
+            cell.isEnabled = false
+            cell.setOnClickListener(null)
+            for (j in 1 until cell.childCount) cell.getChildAt(j).animate().alpha(0f).setDuration(120).start()
+            cell.animate().translationX(toX).translationY(toY + minOf((cell.tag as? Int) ?: 0, 2) * step)
+                .setStartDelay(0).setDuration(240).setInterpolator(DecelerateInterpolator(1.6f)).start()
+        }
+        main.postDelayed(done, 250)
     }
 
     fun test(n: Int) = main.post {
