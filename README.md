@@ -13,7 +13,7 @@ plays discord videos in vlc. the engine is unmodified [libVLC](https://code.vide
 
 ## chat buttons
 
-puts the chat bar buttons in one menu, like the + one. you can give them nicknames or keep some on the bar
+puts the chat bar buttons in one menu, like the + one. you can give them nicknames or keep some on the bar. a little dot shows on the menu when something in it is turned on
 
 ## no compression
 

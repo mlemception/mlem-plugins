@@ -4,7 +4,7 @@ import {
 } from '@valenced/discord/actions'
 import { Design } from '@valenced/discord/design'
 import { createElement, useState } from 'react'
-import { ScrollView, View } from 'react-native'
+import { ScrollView } from 'react-native'
 import { tint } from './icons'
 import { iconFor, inOrder, storage, useLive } from './store'
 import type { Bar } from './store'
@@ -90,7 +90,7 @@ function ButtonList({ bar }: { bar?: Bar }) {
 }
 
 function ManageSheet({ bar }: { bar: Bar }) {
-	const { ActionSheet, ActionSheetCloseButton, BottomSheetTitleHeader } =
+	const { ActionSheet, ActionSheetCloseButton, BottomSheetTitleHeader, Stack } =
 		Design as any
 
 	return (
@@ -106,9 +106,10 @@ function ManageSheet({ bar }: { bar: Bar }) {
 				/>
 			}
 		>
-			<View style={{ paddingBottom: 16 }}>
+			<Stack spacing={24} style={{ paddingBottom: 16 }}>
 				<ButtonList bar={bar} />
-			</View>
+				<Options />
+			</Stack>
 		</ActionSheet>
 	)
 }
@@ -120,10 +121,31 @@ export const openManage = (bar: Bar) =>
 		{ bar } as any,
 	)
 
+function Options() {
+	const { TableRowGroup, TableSwitchRow } = Design as any
+	const s = storage.use()
+	if (!s) return null
+
+	return (
+		<TableRowGroup>
+			<TableSwitchRow
+				label="Show a dot"
+				subLabel="Mark the menu button when a button inside it is on"
+				value={s.dot !== false}
+				onValueChange={(dot: boolean) => storage.set({ dot })}
+			/>
+		</TableRowGroup>
+	)
+}
+
 export function Settings() {
+	const { Stack } = Design as any
 	return (
 		<ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 64 }}>
-			<ButtonList />
+			<Stack spacing={24}>
+				<Options />
+				<ButtonList />
+			</Stack>
 		</ScrollView>
 	)
 }

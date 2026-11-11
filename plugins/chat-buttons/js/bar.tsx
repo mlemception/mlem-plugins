@@ -11,8 +11,8 @@ import {
 	useState,
 } from 'react'
 import { View } from 'react-native'
-import { EmojiIcon, MenuIcon } from './icons'
-import { createBar, storage } from './store'
+import { Dot, EmojiIcon, MenuIcon } from './icons'
+import { createBar, storage, useLit } from './store'
 import type { ComponentType, ReactNode } from 'react'
 import type { Bar as BarType, Entry } from './store'
 
@@ -359,9 +359,21 @@ const isRight = (x: any) => {
 	return Array.isArray(kids) ? kids.some(hasExpr) : hasExpr(kids)
 }
 
+function MenuGlyph({ bar, style }: { bar: BarType; style?: any }) {
+	const lit = useLit(bar)
+	return (
+		<View pointerEvents="none">
+			<MenuIcon style={style} />
+			<Dot on={lit > 0} />
+		</View>
+	)
+}
+
 function Menu({ bar }: { bar: BarType }) {
 	const { ContextMenu } = Design as any
 	const [items] = useState(() => [{ label: 'Buttons', bar }])
+	const [Icon] = useState(() => (p: any) => <MenuGlyph bar={bar} {...p} />)
+	const lit = useLit(bar)
 
 	return (
 		<ContextMenu align="above" triggerOnTap items={items}>
@@ -369,8 +381,8 @@ function Menu({ bar }: { bar: BarType }) {
 				<Button
 					{...p}
 					keep
-					accessibilityLabel="Buttons"
-					IconComponent={MenuIcon}
+					accessibilityLabel={lit ? `Buttons, ${lit} on` : 'Buttons'}
+					IconComponent={Icon}
 				/>
 			)}
 		</ContextMenu>

@@ -5,6 +5,7 @@ export interface Options {
 	names: Record<string, string>
 	kept: Record<string, boolean>
 	seen: Record<string, string>
+	dot: boolean
 }
 
 export interface Entry {
@@ -24,7 +25,7 @@ export interface Bar {
 	version(): number
 }
 
-export const defaults: Options = { names: {}, kept: {}, seen: {} }
+export const defaults: Options = { names: {}, kept: {}, seen: {}, dot: true }
 
 export let storage: any
 
@@ -92,4 +93,11 @@ export function inOrder(list: Entry[], s: any) {
 		return i === -1 ? order.length : i
 	}
 	return [...list].sort((a, b) => at(a) - at(b))
+}
+
+export function useLit(bar?: Bar | null) {
+	const s = storage.use()
+	const list = useLive(bar)
+	if (s?.dot === false) return 0
+	return list.filter(x => x.on === true && !s?.kept?.[x.id]).length
 }
