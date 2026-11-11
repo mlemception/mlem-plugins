@@ -135,11 +135,12 @@ export function displayName(user: any) {
 	)
 }
 
-export function avatarUrl(user: any, size = 64): string | undefined {
+export function avatarSource(user: any, size = 64): any {
 	try {
 		const a = avatars()
-		if (user && a?.getUserAvatarURL)
-			return a.getUserAvatarURL(user, false, size)
+		const v = user && a?.getUserAvatarURL?.(user, false, size)
+		if (typeof v === 'number') return v
+		if (typeof v === 'string' && v) return { uri: v }
 	} catch {}
 }
 

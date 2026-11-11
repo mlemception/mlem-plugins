@@ -56,7 +56,6 @@ function FullView({ entry, owner }: { entry: Entry; owner: string }) {
 	const copyable = !!shownText(entry)
 	return (
 		<ActionSheet
-			startExpanded
 			scrollable
 			header={
 				<BottomSheetTitleHeader

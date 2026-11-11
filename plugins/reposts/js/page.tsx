@@ -671,9 +671,7 @@ export const RepostsPage = memo(function RepostsPage({ uid }: { uid: string }) {
 		refreshIndex()
 	}, [uid])
 	return (
-		<View
-			style={{ paddingHorizontal: SIDE, paddingTop: 16, paddingBottom: 32 }}
-		>
+		<View style={{ paddingHorizontal: SIDE, paddingTop: 2, paddingBottom: 32 }}>
 			<Body uid={uid} />
 		</View>
 	)

@@ -11,7 +11,7 @@ import { Image, Linking, Pressable, View } from 'react-native'
 import { snowflakeTime } from '../shared/wire'
 import {
 	assetIcon,
-	avatarUrl,
+	avatarSource,
 	bio,
 	calendar,
 	colors,
@@ -674,10 +674,10 @@ export function Avatar({
 	const anonBg = useToken(c.BACKGROUND_MOD_STRONG ?? c.BACKGROUND_MOD_SUBTLE)
 	const EyeSlash = assetIcon('EyeSlashIcon')
 	const tappable = !entry.p && !!entry.a && !gone
-	const uri = entry.p
+	const source = entry.p
 		? undefined
-		: (user && avatarUrl(user, 80)) ||
-			(entry.a ? defaultAvatar(entry.a) : undefined)
+		: (user && avatarSource(user, 80)) ||
+			(entry.a ? { uri: defaultAvatar(entry.a) } : undefined)
 	return (
 		<Pressable
 			disabled={!tappable}
@@ -685,9 +685,9 @@ export function Avatar({
 			style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
 			accessibilityLabel={tappable ? 'Open profile' : undefined}
 		>
-			{uri ? (
+			{source ? (
 				<Image
-					source={{ uri }}
+					source={source}
 					style={{ width: AVATAR, height: AVATAR, borderRadius: AVATAR / 2 }}
 				/>
 			) : (

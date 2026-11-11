@@ -2,7 +2,7 @@ import { Design } from '@valenced/discord/design'
 import { Image, ScrollView, View } from 'react-native'
 import { connect, deleteEverything, logout, setOptOut } from './auth'
 import { confirm, explain } from './connect'
-import { assetIcon, avatarUrl, displayName, me, stores } from './discord'
+import { assetIcon, avatarSource, displayName, me, stores } from './discord'
 import { RepostIcon } from './icon'
 import { account, connected, live, save, saved, useVersion } from './store'
 
@@ -40,7 +40,7 @@ export function Settings() {
 						icon={
 							user ? (
 								<Image
-									source={{ uri: avatarUrl(user, 64) }}
+									source={avatarSource(user, 64)}
 									style={{ width: 32, height: 32, borderRadius: 16 }}
 								/>
 							) : (
