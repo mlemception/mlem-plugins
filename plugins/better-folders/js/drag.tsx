@@ -2,9 +2,17 @@ import { Dispatcher } from '@valenced/discord/common/flux'
 import { Stores } from '@valenced/discord/flux'
 import { lookupModule } from '@valenced/modules/finders'
 import { withProps } from '@valenced/modules/finders/filters'
-import { createElement, useRef, useSyncExternalStore } from 'react'
+import {
+	createContext,
+	createElement,
+	useContext,
+	useEffect,
+	useRef,
+	useSyncExternalStore,
+} from 'react'
 import { View } from 'react-native'
 import { menus, rea, ui, worklet } from './discord'
+import { railItem } from './state'
 
 const S: any = new Proxy({}, { get: (_, k) => (Stores as any)[k] })
 
@@ -447,7 +455,15 @@ export function DragLayer() {
 	)
 }
 
+export const InSidebar = createContext(false)
+
 export function Probe({ id }: { id: string }) {
+	const side = useContext(InSidebar)
+	useEffect(() => {
+		if (side) return
+		railItem(true)
+		return () => railItem(false)
+	}, [side])
 	return (
 		<View
 			ref={v => {

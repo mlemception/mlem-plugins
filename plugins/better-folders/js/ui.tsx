@@ -17,6 +17,7 @@ import {
 	DragLayer,
 	dragging,
 	end,
+	InSidebar,
 	move,
 	moveNode,
 	scroller,
@@ -132,8 +133,11 @@ function Sidebar({ w }: { w: number }) {
 		</AView>
 	)
 
-	if (!o.swipe) return body
-	return <Swipe w={w}>{body}</Swipe>
+	return (
+		<InSidebar.Provider value>
+			{o.swipe ? <Swipe w={w}>{body}</Swipe> : body}
+		</InSidebar.Provider>
+	)
 }
 
 function Swipe({ w, children }: { w: number; children: any }) {

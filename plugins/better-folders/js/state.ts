@@ -15,10 +15,19 @@ export interface Group {
 	guildIds: string[]
 }
 
-let realList: () => any[] = () => S.SortedGuildStore.getFastListGuildFolders()
+let rail = 0
+let railOff: ReturnType<typeof setTimeout> | undefined
 
-export const setRealList = (f: () => any[]) => {
-	realList = f
+export function railItem(on: boolean) {
+	const was = rail > 0
+	rail += on ? 1 : -1
+	if (railOff) {
+		clearTimeout(railOff)
+		railOff = undefined
+	}
+	if (rail > 0 === was) return
+	if (rail > 0) setTimeout(() => refresh(true))
+	else railOff = setTimeout(() => refresh(true), 250)
 }
 
 let progress: any
@@ -39,6 +48,8 @@ const emit = () => {
 	ver++
 	for (const s of subs) s()
 }
+
+export const bump = () => setTimeout(emit)
 
 const sub = (l: () => void) => {
 	subs.add(l)
@@ -62,10 +73,10 @@ const touch = (id: number) => {
 
 function compute(): Group[] {
 	const o = opts()
-	if (!o.sidebar) return []
+	if (!o.sidebar || rail <= 0) return []
 	const exp = S.ExpandedGuildFolderStore.getExpandedFolders()
 	let out: Group[] = []
-	for (const n of realList() ?? []) {
+	for (const n of S.SortedGuildStore.getFastListGuildFolders() ?? []) {
 		if (n?.type !== 'folder' || !exp.has(n.id) || !n.children?.length) continue
 		const f = S.SortedGuildStore.getGuildFolderById?.(n.id)
 		out.push({
@@ -205,6 +216,7 @@ export function init() {
 		D.unsubscribe('SET_GUILD_FOLDER_EXPANDED', onToggleSet)
 		D.unsubscribe('CHANNEL_SELECT', onSelect)
 		if (closing) clearTimeout(closing)
+		if (railOff) clearTimeout(railOff)
 		shown = []
 		display = []
 		if (progress) progress.value = 0

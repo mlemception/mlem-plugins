@@ -9,7 +9,7 @@ import { View } from 'react-native'
 import { rea, ui } from './discord'
 import { Probe } from './drag'
 import { Settings } from './settings'
-import { init, isShown, refresh, setRealList } from './state'
+import { bump, init, isShown, refresh } from './state'
 import { defaults, listen, opts, setStorage } from './store'
 import { Home, Panel, RailFolder } from './ui'
 import type { Options } from './store'
@@ -20,8 +20,6 @@ const bar = 'modules/guilds_bar/native'
 function patchRail() {
 	const store = S.SortedGuildStore
 	const proto = Object.getPrototypeOf(store)
-	const real = proto.getFastListGuildFolders
-	setRealList(() => real.call(store))
 	const cache = new WeakMap<object, any[]>()
 	return instead(proto, 'getFastListGuildFolders', (args: any[], orig: any) => {
 		const list = orig.apply(store, args)
@@ -66,10 +64,12 @@ export default plugin<{ jsonStorage: Options }>({
 			}),
 			byPath<any>(`${bar}/GuildsBarGuild.tsx`, mod => {
 				ui.Guild = mod.default
+				bump()
 			}),
 			byPath<any>(`${bar}/GuildsBarGuildFolder.tsx`, mod => {
 				ui.Folder = mod.default
 				ui.FolderBG = mod.GuildsBarGuildFolderBG
+				bump()
 				cleanup(
 					beforeJSX(mod.default, args => {
 						const p = args[1] as any
