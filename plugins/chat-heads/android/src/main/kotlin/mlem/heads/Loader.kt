@@ -64,6 +64,19 @@ val chatHeads = plugin {
             heads?.test(tests++)
             heads?.allowed() == true
         }
+        bridge.registerMethod("mlemheads.theme") { args ->
+            (args.getOrNull(0) as? String)?.let { heads?.theme(it) }
+            null
+        }
+        bridge.registerMethod("mlemheads.me") { args ->
+            heads?.me(args.getOrNull(0) as? String ?: "", args.getOrNull(1) as? String)
+            null
+        }
+        bridge.registerMethod("mlemheads.sent") { args ->
+            val channel = args.getOrNull(0)?.toString() ?: return@registerMethod null
+            heads?.sent(channel, args.getOrNull(1)?.toString().orEmpty(), args.getOrNull(2) == true, args.getOrNull(3)?.toString())
+            null
+        }
     }
 
     stop {

@@ -13,6 +13,15 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Parcelable
 
+class Line(
+    val senderKey: String,
+    val sender: String,
+    val text: String,
+    val time: Long,
+    val mine: Boolean,
+    val avatar: Bitmap?,
+)
+
 class Msg(
     val key: String,
     val title: String,
@@ -21,6 +30,9 @@ class Msg(
     val group: Boolean,
     val avatar: Bitmap?,
     val intent: PendingIntent?,
+    val lines: List<Line>,
+    val reply: Notification.Action?,
+    val selfName: String,
 )
 
 @Suppress("DEPRECATION")
@@ -48,18 +60,38 @@ fun read(context: Context, tag: String?, id: Int, n: Notification, size: Int): M
     val messages = raw?.filterIsInstance<Bundle>().orEmpty()
     if (messages.isEmpty() && n.category != Notification.CATEGORY_MESSAGE) return null
 
-    val last = messages.lastOrNull()
+    val user = x.person(Notification.EXTRA_MESSAGING_PERSON)
+    val selfName = (user?.name ?: x.getCharSequence(Notification.EXTRA_SELF_DISPLAY_NAME))?.toString().orEmpty()
+    val faces = HashMap<String, Bitmap?>()
+    val lines = messages.mapNotNull { b ->
+        val p = b.person("sender_person")
+        val text = b.getCharSequence("text")?.toString() ?: return@mapNotNull null
+        val mine = p == null || (user?.key != null && p.key == user.key)
+        val key = p?.key ?: p?.name?.toString() ?: "me"
+        Line(
+            senderKey = key,
+            sender = (p?.name ?: b.getCharSequence("sender") ?: selfName).toString(),
+            text = text,
+            time = b.getLong("time"),
+            mine = mine,
+            avatar = if (mine) null else faces.getOrPut(key) { p?.icon.load(context, size) },
+        )
+    }
+
+    val last = lines.lastOrNull { !it.mine }
     val group = x.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION)
-    val sender = last?.person("sender_person")
     val title = (x.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
-        ?: sender?.name
+        ?: last?.sender
         ?: x.getCharSequence(Notification.EXTRA_TITLE))?.toString().orEmpty()
-    val text = (last?.getCharSequence("text") ?: x.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty()
+    val text = last?.text ?: x.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
 
     val large = n.getLargeIcon().load(context, size)
-    val face = sender?.icon.load(context, size)
+    val face = last?.avatar
     val avatar = if (group) large ?: face else face ?: large
 
+    val unread = lines.size - (lines.indexOfLast { it.mine } + 1)
+    val reply = n.actions?.firstOrNull { !it.remoteInputs.isNullOrEmpty() }
+
     val key = n.shortcutId?.takeIf { it.isNotEmpty() } ?: "${tag.orEmpty()}|$id"
-    return Msg(key, title, text, messages.size.coerceAtLeast(1), group, avatar, n.contentIntent)
+    return Msg(key, title, text, if (lines.isEmpty()) 1 else unread, group, avatar, n.contentIntent, lines, reply, selfName)
 }

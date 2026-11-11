@@ -2,10 +2,10 @@
 	"format": 1,
 	"id": "mlemception.chatheads",
 	"name": "Chat Heads",
-	"description": "Messenger style chat heads for new messages while Discord is in the background.",
+	"description": "Messenger style chat heads with quick reply for new messages while Discord is in the background.",
 	"author": "mlemception",
 	"icon": "ChatIcon",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
