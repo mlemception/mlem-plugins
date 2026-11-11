@@ -1,7 +1,8 @@
 import { Dispatcher } from '@valenced/discord/common/flux'
 import { Stores } from '@valenced/discord/flux'
+import { instead } from '@valenced/patcher'
 import { useSyncExternalStore } from 'react'
-import { rea, timing } from './discord'
+import { loadRail, rea, timing } from './discord'
 import { listen, opts } from './store'
 
 const S: any = new Proxy({}, { get: (_, k) => (Stores as any)[k] })
@@ -16,18 +17,61 @@ export interface Group {
 }
 
 let rail = 0
+let home = 0
+let custom = false
 let railOff: ReturnType<typeof setTimeout> | undefined
 
-export function railItem(on: boolean) {
-	const was = rail > 0
-	rail += on ? 1 : -1
+const nudge = () => setTimeout(() => S.ExpandedGuildFolderStore.emitChange?.())
+
+function railCheck() {
 	if (railOff) {
 		clearTimeout(railOff)
 		railOff = undefined
 	}
-	if (rail > 0 === was) return
-	if (rail > 0) setTimeout(() => refresh(true))
-	else railOff = setTimeout(() => refresh(true), 250)
+	if (rail > 0) {
+		const was = custom
+		custom = false
+		if (was) nudge()
+		setTimeout(() => refresh(true))
+		return
+	}
+	railOff = setTimeout(() => {
+		railOff = undefined
+		const next = home > 0
+		if (next) loadRail()
+		if (next !== custom) {
+			custom = next
+			nudge()
+		}
+		refresh(true)
+	}, 400)
+}
+
+export function railItem(on: boolean) {
+	const was = rail > 0
+	rail += on ? 1 : -1
+	if (rail > 0 !== was) railCheck()
+}
+
+export function homeItem(on: boolean) {
+	home += on ? 1 : -1
+	if (rail <= 0) railCheck()
+}
+
+let realExp = () => S.ExpandedGuildFolderStore.getExpandedFolders()
+
+export function hideOpen() {
+	const store = S.ExpandedGuildFolderStore
+	const proto = Object.getPrototypeOf(store)
+	const real = proto.getExpandedFolders
+	realExp = () => real.call(store)
+	return instead(proto, 'getExpandedFolders', (args: any[], orig: any) => {
+		const set = orig.apply(store, args)
+		if (!custom || !shown.length || !(set instanceof Set)) return set
+		const out = new Set(set)
+		for (const g of shown) out.delete(g.id)
+		return out
+	})
 }
 
 let progress: any
@@ -73,8 +117,8 @@ const touch = (id: number) => {
 
 function compute(): Group[] {
 	const o = opts()
-	if (!o.sidebar || rail <= 0) return []
-	const exp = S.ExpandedGuildFolderStore.getExpandedFolders()
+	if (!o.sidebar || (rail <= 0 && !custom)) return []
+	const exp = realExp()
 	let out: Group[] = []
 	for (const n of S.SortedGuildStore.getFastListGuildFolders() ?? []) {
 		if (n?.type !== 'folder' || !exp.has(n.id) || !n.children?.length) continue
@@ -113,6 +157,7 @@ export function refresh(instant = false) {
 	if (key(next) === key(shown)) return
 	const wasOpen = shown.length > 0
 	shown = next
+	if (custom) nudge()
 	const open = shown.length > 0
 	if (closing) {
 		clearTimeout(closing)
@@ -151,8 +196,7 @@ const setExpanded = (folderId: number, expanded: boolean) =>
 	D.dispatch({ type: 'SET_GUILD_FOLDER_EXPANDED', folderId, expanded })
 
 export function closeAll() {
-	for (const id of [...S.ExpandedGuildFolderStore.getExpandedFolders()])
-		setExpanded(id, false)
+	for (const id of [...realExp()]) setExpanded(id, false)
 }
 
 const folderOf = (guildId?: string | null) =>
@@ -189,7 +233,7 @@ function onToggle(p: any) {
 	if (S.ExpandedGuildFolderStore.isFolderExpanded(p.folderId)) touch(p.folderId)
 	const o = opts()
 	if (!o.oneOpen) return
-	const exp = [...S.ExpandedGuildFolderStore.getExpandedFolders()]
+	const exp = [...realExp()]
 	if (exp.length < 2) return
 	const keep = recent.find(id => exp.includes(id)) ?? p.folderId
 	setTimeout(() => {
@@ -217,6 +261,10 @@ export function init() {
 		D.unsubscribe('CHANNEL_SELECT', onSelect)
 		if (closing) clearTimeout(closing)
 		if (railOff) clearTimeout(railOff)
+		if (custom) {
+			custom = false
+			nudge()
+		}
 		shown = []
 		display = []
 		if (progress) progress.value = 0

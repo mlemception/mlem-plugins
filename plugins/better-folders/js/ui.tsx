@@ -25,7 +25,7 @@ import {
 	useDragging,
 } from './drag'
 import { icon } from './icon'
-import { closeAll, prog, useDisplay } from './state'
+import { closeAll, homeItem, prog, useDisplay } from './state'
 import { useOptions } from './store'
 import type { Group } from './state'
 
@@ -48,6 +48,11 @@ const usesDrawer = () => {
 export function Home({ real, p }: { real: any; p: any }) {
 	const w = railWidth()
 	const drawer = usesDrawer()
+	useEffect(() => {
+		if (drawer) return
+		homeItem(true)
+		return () => homeItem(false)
+	}, [drawer])
 	return (
 		<>
 			{createElement(real, p)}

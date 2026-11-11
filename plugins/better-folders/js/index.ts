@@ -9,7 +9,7 @@ import { View } from 'react-native'
 import { rea, ui } from './discord'
 import { Probe } from './drag'
 import { Settings } from './settings'
-import { bump, init, isShown, refresh } from './state'
+import { bump, hideOpen, init, isShown, refresh } from './state'
 import { defaults, listen, opts, setStorage } from './store'
 import { Home, Panel, RailFolder } from './ui'
 import type { Options } from './store'
@@ -51,6 +51,7 @@ export default plugin<{ jsonStorage: Options }>({
 
 		cleanup(
 			patchRail(),
+			hideOpen(),
 			init(),
 			listen(() => S.SortedGuildStore.emitChange?.()),
 			byPath<any>('modules/panels/native/PanelsConfig.tsx', mod => {

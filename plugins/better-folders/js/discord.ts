@@ -1,3 +1,4 @@
+import { lookupModuleWithImportedPath } from '@valenced/discord/utils/modules/finders'
 import { lookupModule } from '@valenced/modules/finders'
 import { withName, withProps } from '@valenced/modules/finders/filters'
 
@@ -77,6 +78,32 @@ export function worklet<T extends (...a: any[]) => any>(
 	f.__workletHash = hash(code)
 	f.__initData = { code }
 	return js
+}
+
+export function loadRail() {
+	if (ui.Guild && ui.Folder) return
+	const metro = valenced.modules.metro
+	const [, bar] = lookupModuleWithImportedPath(
+		'modules/guilds_bar/native/GuildsBar.tsx',
+	)
+	if (bar == null) return
+	const seen = new Set<number>()
+	let level = [bar]
+	for (let d = 0; d < 2; d++) {
+		const next: number[] = []
+		for (const id of level)
+			for (const dep of metro.getModuleDependencies(id) ?? []) {
+				if (seen.has(dep)) continue
+				seen.add(dep)
+				next.push(dep)
+				if (!metro.isModuleInitialized(dep))
+					try {
+						__r(dep)
+					} catch {}
+				if (ui.Guild && ui.Folder) return
+			}
+		level = next
+	}
 }
 
 export function timing(open: boolean) {
