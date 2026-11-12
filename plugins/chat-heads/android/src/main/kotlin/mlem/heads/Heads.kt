@@ -1020,6 +1020,14 @@ class Heads(private val app: Context, private val storage: File, private val log
         }.isSuccess
     }
 
+    private val remountCheck = Runnable { if (cardView != null && surface?.remountIfEmpty() == true) log("card surface remounted", null) }
+
+    fun painted() = main.post {
+        main.removeCallbacks(remountCheck)
+        main.postDelayed(remountCheck, 150)
+        main.postDelayed(remountCheck, 600)
+    }
+
     fun replied(key: String) = main.post { heads.firstOrNull { it.key == key }?.let { it.repliedAt = System.currentTimeMillis() } }
 
     fun test(n: Int) = main.post {

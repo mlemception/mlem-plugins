@@ -911,6 +911,10 @@ function Card() {
 		setPicker(true)
 	}
 
+	const full = !!(st && L && head && mana)
+	useEffect(() => {
+		if (full) call('mlemheads.painted', []).catch(() => {})
+	}, [full, st?.selected, visible])
 	if (!st || !L || !head || !mana) return null
 	const { ThemeContextProvider, ToastContainer, IconButton } = mana
 	const AView = R.default.View

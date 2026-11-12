@@ -78,6 +78,7 @@ val chatHeads = plugin {
             null
         }
         bridge.registerMethod("mlemheads.state") { heads?.state() }
+        bridge.registerMethod("mlemheads.painted") { heads?.painted(); null }
         bridge.registerMethod("mlemheads.collapse") { heads?.collapseFromJs(); null }
         bridge.registerMethod("mlemheads.open") { args ->
             (args.getOrNull(0) as? String)?.let { heads?.openKey(it) }

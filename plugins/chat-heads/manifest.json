@@ -5,7 +5,7 @@
 	"description": "Messenger style chat heads with quick reply for new messages while Discord is in the background.",
 	"author": "mlemception",
 	"icon": "ChatIcon",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"

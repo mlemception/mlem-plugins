@@ -87,6 +87,17 @@ class Surface(private val app: Application, private val cache: File, private val
         true
     }.onFailure { log("warm failed", it) }.getOrDefault(false)
 
+    fun remountIfEmpty(): Boolean = runCatching {
+        val v = view as? android.view.ViewGroup ?: return false
+        fun count(x: View): Int = 1 + ((x as? android.view.ViewGroup)?.let { g -> (0 until g.childCount).sumOf { count(g.getChildAt(it)) } } ?: 0)
+        if (count(v) >= 8) return false
+        val b = binding ?: return false
+        val m = b.javaClass.getMethod("setMountable", Boolean::class.javaPrimitiveType)
+        m.invoke(b, false)
+        m.invoke(b, true)
+        true
+    }.onFailure { log("remount failed", it) }.getOrDefault(false)
+
     fun frames(on: Boolean) = runCatching {
         val c = context() ?: return@runCatching
         val f = listenersField ?: fields(c.javaClass).first { it.name == "mLifecycleEventListeners" }.also { listenersField = it }
