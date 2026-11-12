@@ -62,3 +62,7 @@ hold a message to repost it to a tab on your profile, or repost it anonymously. 
 ## counters
 
 shows how many servers you're in and how many of your friends are online at the top of the server list, right above the line under dms. it uses discord's own text for it so it shows up in your language. you can turn either one off and change the text size. based on [Counters](https://github.com/rushiiMachine/aliucord-plugins/tree/master/Counters) by rushii
+
+## soundboard mic
+
+lets you use every soundboard sound in voice without nitro, including sounds from other servers. the picker shows them like any other sound. discord won't send those for you, so the plugin plays them into your mic instead. people in the call hear it like you talking, so they don't get the little emoji over your pfp and it's silent while you're muted. works with push to talk without holding the button
