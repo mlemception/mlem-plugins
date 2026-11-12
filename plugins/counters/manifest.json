@@ -1,0 +1,19 @@
+{
+	"format": 1,
+	"id": "mlemception.counters",
+	"name": "Counters",
+	"description": "Shows how many servers you're in and how many friends are online at the top of the server list.",
+	"author": "mlemception",
+	"version": "1.0.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": "*"
+		}
+	},
+	"dist": {
+		"script": "index.js"
+	}
+}

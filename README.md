@@ -58,3 +58,7 @@ messenger style chat heads. when someone messages you while discord is in the ba
 ## reposts
 
 hold a message to repost it to a tab on your profile, or repost it anonymously. people with the plugin see your reposts and whether they match the original message. runs on its own small cloudflare worker, setup is in plugins/reposts
+
+## counters
+
+shows how many servers you're in and how many of your friends are online at the top of the server list, right above the line under dms. it uses discord's own text for it so it shows up in your language. you can turn either one off and change the text size. based on [Counters](https://github.com/rushiiMachine/aliucord-plugins/tree/master/Counters) by rushii
