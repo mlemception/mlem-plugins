@@ -49,7 +49,7 @@ rewrites your messages as a pirate, shakespeare, yoda, uwu and a bunch more befo
 
 ## game session spoofer
 
-shows you as playing any game discord can detect, for however long you want, without it running. you can say you already played for a while, line up a queue of games or throw random ones in. can also send the time to discord like a real game would so it counts toward the playtime badges. that part is off by default and can get your account banned, so only turn it on for an account you dont mind losing. just showing the game is the same as any custom status app. it's under valenced in settings. based on [gameSessionSpoofer](https://github.com/Accentaro/gameSessionSpoofer) by benjii
+shows you as playing any game discord can detect, for however long you want, without it running. you can say you already played for a while, line up a queue of games or throw random ones in. you can also add the extra lines real games show, like a server ip or what you're up to, a party size like 1 of 4, a small icon and up to 2 link buttons. can also send the time to discord like a real game would so it counts toward the playtime badges. that part is off by default and can get your account banned, so only turn it on for an account you dont mind losing. just showing the game is the same as any custom status app. it's under valenced in settings. based on [gameSessionSpoofer](https://github.com/Accentaro/gameSessionSpoofer) by benjii
 
 ## chat heads
 

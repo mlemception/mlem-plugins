@@ -8,8 +8,18 @@ export interface Game {
 	icon?: string | null
 }
 
+export interface Rich {
+	details?: string
+	state?: string
+	party?: [number, number] | null
+	small?: { url: string; text: string } | null
+	buttons?: { label: string; url: string }[]
+	display?: 0 | 1 | 2
+}
+
 export interface Queued extends Game {
 	minutes: number
+	rich?: Rich
 }
 
 export interface Credit {
@@ -25,6 +35,8 @@ export interface Stored {
 	endsAt: number
 	credit?: Credit
 	image?: string
+	rich?: Rich
+	smallImage?: string
 }
 
 export interface Data {
@@ -39,6 +51,7 @@ export interface Data {
 	recent: Game[]
 	creditedMs: number
 	duration: string
+	rich: Record<string, Rich>
 }
 
 export const defaults: Data = {
@@ -53,6 +66,7 @@ export const defaults: Data = {
 	recent: [],
 	creditedMs: 0,
 	duration: '1h',
+	rich: {},
 }
 
 export type Storage = PluginApi<{ jsonStorage: Data }>['jsonStorage']
@@ -99,4 +113,23 @@ export function remember(g: Game) {
 		...data().recent.filter(x => x.id !== g.id),
 	].slice(0, 8)
 	save({ recent })
+}
+
+export const hasRich = (r?: Rich | null) =>
+	!!r &&
+	!!(
+		r.details?.trim() ||
+		r.state?.trim() ||
+		r.party ||
+		r.small?.url ||
+		r.buttons?.length
+	)
+
+export function rememberRich(id: string, r: Rich) {
+	const rich = { ...data().rich }
+	delete rich[id]
+	if (hasRich(r)) rich[id] = r
+	const keys = Object.keys(rich)
+	for (const k of keys.slice(0, Math.max(0, keys.length - 20))) delete rich[k]
+	save({ rich })
 }

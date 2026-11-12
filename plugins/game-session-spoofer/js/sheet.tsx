@@ -12,8 +12,9 @@ import {
 	toast,
 } from './common'
 import { loaded, shuffle } from './games'
+import { fromDraft, RichFields, summary, toDraft } from './rich'
 import { current, play } from './session'
-import { data, save, useData } from './store'
+import { data, hasRich, rememberRich, save, useData } from './store'
 import type { App } from './games'
 import type { Game, Queued } from './store'
 
@@ -124,13 +125,22 @@ function GameSheet({ game }: { game: Game & Partial<App> }) {
 	})
 	const [played, setPlayed] = useState(0)
 	const [playedText, setPlayedText] = useState<string | null>(null)
+	const [draft, setDraft] = useState(() => {
+		const c = current()
+		return toDraft(c?.game.id === game.id ? c.rich : d.rich[game.id])
+	})
+	const [statusOpen, setStatusOpen] = useState(() =>
+		hasRich(fromDraft(draft).rich),
+	)
+	const { rich, errors, ok } = fromDraft(draft)
+	const withRich = hasRich(rich) ? rich : undefined
 
 	const minutes = lenText !== null ? parse(lenText) : len
 	const back = playedText !== null ? parse(playedText, MAX_PLAYED) : played
 	const cur = current()
 	const same = cur?.game.id === game.id
-	const canQueue = minutes !== null && queueOpen(d.queue)
-	const canNext = minutes !== null && minutes !== 0 && !!cur
+	const canQueue = minutes !== null && ok && queueOpen(d.queue)
+	const canNext = minutes !== null && ok && minutes !== 0 && !!cur
 	const queued = d.queue.some(q => q.id === game.id)
 
 	const entry = (): Queued => ({
@@ -139,23 +149,25 @@ function GameSheet({ game }: { game: Game & Partial<App> }) {
 		exe: game.exe,
 		icon: game.icon ?? null,
 		minutes: minutes ?? 60,
+		...(withRich && { rich: withRich }),
 	})
 
 	const remember = () => {
 		const label = LENGTHS.find(x => x[1] === minutes)?.[0]
 		save({ duration: lenText || label || d.duration })
+		rememberRich(game.id, rich)
 	}
 
 	const start = () => {
-		if (minutes === null || back === null) return
+		if (minutes === null || back === null || !ok) return
 		remember()
-		play(entry(), minutes, back)
+		play(entry(), minutes, back, withRich)
 		close()
 		toast(`Playing ${game.name}`)
 	}
 
 	const enqueue = (next: boolean) => {
-		if (minutes === null) return
+		if (minutes === null || !ok) return
 		remember()
 		const q = data().queue
 		save({ queue: next ? [entry(), ...q] : [...q, entry()] })
@@ -244,6 +256,33 @@ function GameSheet({ game }: { game: Game & Partial<App> }) {
 					/>
 				</View>
 
+				<View style={{ gap: 10 }}>
+					<View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+						<View style={{ flex: 1 }}>
+							<Label
+								text="Status"
+								hint={
+									summary(withRich) ||
+									'Extra lines under the game, like a server or party size'
+								}
+							/>
+						</View>
+						<Pill
+							label={statusOpen ? 'Hide' : hasRich(rich) ? 'Edit' : 'Add'}
+							selected={false}
+							onPress={() => setStatusOpen(!statusOpen)}
+						/>
+					</View>
+					{statusOpen && (
+						<RichFields draft={draft} set={setDraft} errors={errors} />
+					)}
+					{!statusOpen && !ok && (
+						<Text variant="text-xs/medium" color="text-feedback-critical">
+							Something in Status needs fixing
+						</Text>
+					)}
+				</View>
+
 				<View style={{ gap: 8 }}>
 					<Button
 						text={
@@ -255,7 +294,7 @@ function GameSheet({ game }: { game: Game & Partial<App> }) {
 						}
 						variant="primary"
 						size="lg"
-						disabled={minutes === null || back === null}
+						disabled={minutes === null || back === null || !ok}
 						onPress={start}
 					/>
 					<View style={{ flexDirection: 'row', gap: 8 }}>

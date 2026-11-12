@@ -2,9 +2,9 @@ import { Dispatcher } from '@valenced/discord/common/flux'
 import { Stores } from '@valenced/discord/flux'
 import { AppState } from 'react-native'
 import { DAILY_CAP, HEARTBEAT_MS, MAX_GAP, newCredit, report } from './credit'
-import { activityImage, fetchIcon } from './games'
-import { bump, data, remember, save } from './store'
-import type { Credit, Game, Stored } from './store'
+import { activityImage, externalAsset, fetchIcon } from './games'
+import { bump, data, remember, rememberRich, save } from './store'
+import type { Credit, Game, Rich, Stored } from './store'
 
 const SOCKET = 'mlem-game-session'
 const PID = 31337
@@ -33,7 +33,31 @@ function activity(s: Stored) {
 	}
 	if (o.art && s.image)
 		a.assets = { large_image: s.image, large_text: s.game.name }
+	const r = s.rich
+	if (!r) return a
+	const details = text(r.details)
+	const state = text(r.state)
+	if (details) a.details = details
+	if (state) a.state = state
+	if (r.party) a.party = { id: `mlem-${s.start}`, size: [...r.party] }
+	if (s.smallImage) {
+		a.assets = { ...a.assets, small_image: s.smallImage }
+		const t = text(r.small?.text)
+		if (t) a.assets.small_text = t
+	}
+	const buttons = (r.buttons ?? []).filter(b => b.label.trim() && b.url)
+	if (buttons.length) {
+		a.buttons = buttons.map(b => b.label.trim().slice(0, 32))
+		a.metadata = { button_urls: buttons.map(b => b.url) }
+	}
+	if ((r.display === 1 && state) || (r.display === 2 && details))
+		a.status_display_type = r.display
 	return a
+}
+
+const text = (v?: string) => {
+	const t = v?.trim().slice(0, 128)
+	return t && t.length >= 2 ? t : undefined
 }
 
 export function publish() {
@@ -54,6 +78,8 @@ function persist() {
 			endsAt: cur.endsAt,
 			credit: cur.credit && { ...cur.credit },
 			image: cur.image,
+			rich: cur.rich,
+			smallImage: cur.smallImage,
 		},
 	})
 }
@@ -137,6 +163,8 @@ function begin(
 	endsAt: number,
 	credit?: Credit,
 	image?: string,
+	rich?: Rich,
+	smallImage?: string,
 ) {
 	const prev = cur
 	if (prev) finish(prev)
@@ -147,6 +175,8 @@ function begin(
 		endsAt,
 		credit,
 		image,
+		rich,
+		smallImage: rich?.small?.url ? smallImage : undefined,
 	}
 	remember(cur.game)
 	persist()
@@ -156,8 +186,10 @@ function begin(
 }
 
 let imaging = false
+let smalling = false
 
 function ensureImage() {
+	ensureSmall()
 	const s = cur
 	if (!s || s.image || imaging || !data().art) return
 	imaging = true
@@ -176,9 +208,45 @@ function ensureImage() {
 	})()
 }
 
-export function play(g: Game, minutes: number, playedFor = 0) {
+function ensureSmall() {
+	const s = cur
+	const url = s?.rich?.small?.url
+	if (!s || !url || s.smallImage || smalling) return
+	smalling = true
+	const my = gen
+	;(async () => {
+		try {
+			const img = await externalAsset(s.game.id, url)
+			if (my !== gen || cur !== s || s.rich?.small?.url !== url || !img) return
+			s.smallImage = img
+			persist()
+			publish()
+		} finally {
+			smalling = false
+		}
+	})()
+}
+
+export function play(g: Game, minutes: number, playedFor = 0, rich?: Rich) {
 	const now = Date.now()
-	begin(g, now - playedFor * 60_000, minutes ? now + minutes * 60_000 : 0)
+	begin(
+		g,
+		now - playedFor * 60_000,
+		minutes ? now + minutes * 60_000 : 0,
+		undefined,
+		undefined,
+		rich,
+	)
+}
+
+export function setRich(r: Rich) {
+	if (!cur) return
+	rememberRich(cur.game.id, r)
+	if (cur.rich?.small?.url !== r.small?.url) cur.smallImage = undefined
+	cur.rich = r
+	persist()
+	publish()
+	bump()
 }
 
 export function stopSession() {
@@ -212,7 +280,7 @@ export function advance(from: number) {
 		const endsAt = next.minutes ? at + next.minutes * 60_000 : 0
 		if (!endsAt || endsAt > Date.now()) {
 			save({ queue })
-			begin(next, at, endsAt)
+			begin(next, at, endsAt, undefined, undefined, next.rich)
 			return next
 		}
 		at = endsAt
@@ -278,6 +346,8 @@ export function init() {
 			endsAt: s.endsAt,
 			credit: s.credit && { ...s.credit },
 			image: s.image,
+			rich: s.rich,
+			smallImage: s.smallImage,
 		}
 		if (restored.endsAt && restored.endsAt <= Date.now()) {
 			cur = restored
@@ -289,6 +359,8 @@ export function init() {
 				restored.endsAt,
 				restored.credit,
 				restored.image,
+				restored.rich,
+				restored.smallImage,
 			)
 	}
 

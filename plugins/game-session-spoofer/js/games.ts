@@ -173,7 +173,10 @@ const images = new Map<string, string>()
 
 export async function activityImage(id: string, hash?: string | null) {
 	const url = iconUrl(id, hash ?? (await fetchIcon(id)), 512)
-	if (!url) return
+	if (url) return externalAsset(id, url)
+}
+
+export async function externalAsset(id: string, url: string) {
 	const known = images.get(url)
 	if (known) return known
 	try {

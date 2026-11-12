@@ -18,6 +18,7 @@ import {
 } from './common'
 import { DAILY_CAP, HEARTBEAT_MS } from './credit'
 import { loaded, loadGames, search } from './games'
+import { openStatus, summary } from './rich'
 import {
 	current,
 	extend,
@@ -172,6 +173,11 @@ function NowPlaying() {
 					<Text variant="text-lg/bold" color="text-strong" lineClamp={2}>
 						{s.game.name}
 					</Text>
+					{!!summary(s.rich) && (
+						<Text variant="text-sm/medium" color="text-default" lineClamp={2}>
+							{summary(s.rich)}
+						</Text>
+					)}
 					<Text variant="text-sm/medium" color="text-muted">
 						{s.endsAt
 							? `Played for ${fmt(played)}, ${fmt(left)} left`
@@ -247,6 +253,12 @@ function NowPlaying() {
 						/>
 					</>
 				) : null}
+				<Button
+					text="Status"
+					size="sm"
+					variant="secondary"
+					onPress={() => openStatus()}
+				/>
 				{s.endsAt ? (
 					<Button
 						text="Forever"
