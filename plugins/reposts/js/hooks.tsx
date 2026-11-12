@@ -1,10 +1,11 @@
 import { ActionSheetActionCreators } from '@valenced/discord/actions'
 import { getModuleWithImportedPath } from '@valenced/discord/utils/modules/finders'
-import { after, before } from '@valenced/patcher'
+import { after, before, instead } from '@valenced/patcher'
 import {
 	cloneElement,
 	createElement,
 	isValidElement,
+	useRef,
 	useSyncExternalStore,
 } from 'react'
 import { connect } from './auth'
@@ -170,6 +171,60 @@ export function patchMessageSheet(): Cleanup {
 let viewing: string | undefined
 const PROFILE = 'modules/user_profile/native/UserProfileContent.tsx'
 const PAGES = 'modules/user_profile/native/UserProfileTabPages.tsx'
+const SECTIONS = 'modules/user_profile/hooks/native/useProfileSectionTabs.tsx'
+
+function keepTab(own: any, opts: any, res: any) {
+	if (
+		typeof res?.handleTabChange !== 'function' ||
+		typeof res?.restoreActiveIndex !== 'function'
+	)
+		return res
+	own.known = [
+		0,
+		opts?.boardTabIndex,
+		opts?.activityTabIndex,
+		opts?.wishlistTabIndex,
+	]
+	if (own.change !== res.handleTabChange) {
+		const real = res.handleTabChange
+		own.change = real
+		own.onChange = (i: number) => {
+			if (typeof i !== 'number' || own.known.includes(i)) {
+				own.extra = undefined
+				return real(i)
+			}
+			own.extra = i
+		}
+	}
+	if (own.restore !== res.restoreActiveIndex) {
+		const real = res.restoreActiveIndex
+		own.restore = real
+		own.onRestore = (state: any) => {
+			const n = state?.items?.length ?? 0
+			if (own.extra == null || own.extra >= n) {
+				own.extra = undefined
+				return real(state)
+			}
+			if (state.activeIndex?.get?.() !== own.extra)
+				state.setActiveIndex(own.extra, false, true)
+		}
+	}
+	if (
+		own.res !== res ||
+		own.outChange !== own.onChange ||
+		own.outRestore !== own.onRestore
+	) {
+		own.res = res
+		own.outChange = own.onChange
+		own.outRestore = own.onRestore
+		own.out = {
+			...res,
+			handleTabChange: own.onChange,
+			restoreActiveIndex: own.onRestore,
+		}
+	}
+	return own.out
+}
 
 export function patchProfile(cleanup: (...c: Cleanup[]) => void) {
 	cleanup(
@@ -217,6 +272,20 @@ export function patchProfile(cleanup: (...c: Cleanup[]) => void) {
 						]
 					} catch {
 						return args
+					}
+				}),
+			)
+		}),
+		getModuleWithImportedPath<any>(SECTIONS, mod => {
+			if (typeof mod?.useProfileSectionTabs !== 'function') return
+			cleanup(
+				instead(mod, 'useProfileSectionTabs', (args: any[], real: any) => {
+					const res = real(...args)
+					const own = useRef<any>({}).current
+					try {
+						return keepTab(own, args[0], res)
+					} catch {
+						return res
 					}
 				}),
 			)

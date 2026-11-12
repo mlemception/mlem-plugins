@@ -4,7 +4,7 @@
 	"name": "Reposts",
 	"description": "Repost messages to a tab on your profile.",
 	"author": "mlemception",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
