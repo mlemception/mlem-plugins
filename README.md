@@ -53,7 +53,7 @@ shows you as playing any game discord can detect, for however long you want, wit
 
 ## chat heads
 
-messenger style chat heads. when someone messages you while discord is in the background their pfp pops up as a bubble over whatever you're doing. tap it to read the messages and reply right there, hold it to jump into the chat. drag it around or throw it on the x to get rid of it. replies go through discord's own notification reply so they work like replying from the notification. needs display over other apps, there's a button for it in its settings
+messenger style chat heads. when someone messages you while discord is in the background their pfp pops up as a bubble over whatever you're doing. tap it to read the chat and reply right there, hold it to jump into the chat. the card looks like discord's and has the emoji, gifs and stickers tabs too. drag the heads around or throw them on the x to get rid of them. it moves and feels like discord's voice bubble. needs display over other apps, there's a button for it in its settings
 
 ## reposts
 

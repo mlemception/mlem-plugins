@@ -15,11 +15,14 @@ val chatHeads = plugin {
     val hooks = ArrayList<XC_MethodHook.Unhook>()
     var heads: Heads? = null
     var tests = 0
+    var ready: Boolean? = null
 
     start {
-        withAppContext { context ->
-            val app = context.applicationContext ?: context
-            if (heads == null) heads = Heads(app, storageDir)
+        val report: (String, Throwable?) -> Unit = { m, t -> if (t != null) log.e("chat heads: $m", t) else log.w("chat heads: $m") }
+        val running = runCatching { Class.forName("android.app.ActivityThread").getMethod("currentApplication").invoke(null) as? android.content.Context }.getOrNull()
+        if (running != null) heads = Heads(running, storageDir, report).also { h -> ready?.let { h.cardReady = it } }
+        else withAppContext { context ->
+            if (heads == null) heads = Heads(context.applicationContext ?: context, storageDir, report).also { h -> ready?.let { h.cardReady = it } }
         }
 
         val nm = NotificationManager::class.java
@@ -68,13 +71,32 @@ val chatHeads = plugin {
             (args.getOrNull(0) as? String)?.let { heads?.theme(it) }
             null
         }
-        bridge.registerMethod("mlemheads.me") { args ->
-            heads?.me(args.getOrNull(0) as? String ?: "", args.getOrNull(1) as? String)
+        bridge.registerMethod("mlemheads.ready") { args ->
+            val r = args.getOrNull(0) == true
+            ready = r
+            heads?.cardReady = r
             null
         }
-        bridge.registerMethod("mlemheads.sent") { args ->
-            val channel = args.getOrNull(0)?.toString() ?: return@registerMethod null
-            heads?.sent(channel, args.getOrNull(1)?.toString().orEmpty(), args.getOrNull(2) == true, args.getOrNull(3)?.toString())
+        bridge.registerMethod("mlemheads.state") { heads?.state() }
+        bridge.registerMethod("mlemheads.collapse") { heads?.collapseFromJs(); null }
+        bridge.registerMethod("mlemheads.open") { args ->
+            (args.getOrNull(0) as? String)?.let { heads?.openKey(it) }
+            null
+        }
+        bridge.registerMethod("mlemheads.select") { args ->
+            (args.getOrNull(0) as? String)?.let { heads?.selectKey(it) }
+            null
+        }
+        bridge.registerMethod("mlemheads.keyboard") { args ->
+            heads?.keyboard(args.getOrNull(0) == true)
+            null
+        }
+        bridge.registerMethod("mlemheads.reply") { args ->
+            val key = args.getOrNull(0) as? String ?: return@registerMethod false
+            heads?.reply(key, args.getOrNull(1)?.toString().orEmpty()) == true
+        }
+        bridge.registerMethod("mlemheads.replied") { args ->
+            (args.getOrNull(0) as? String)?.let { heads?.replied(it) }
             null
         }
     }
